@@ -1,0 +1,74 @@
+# ===========================
+# AzurA - Stage Project
+# ===========================
+
+# Documentation interne (sensible)
+docs/
+
+# Environnement & Secrets
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+*.crt
+
+# Python
+__pycache__/
+*.py[cod]
+*.class
+*.so
+*.egg-info/
+dist/
+build/
+eggs/
+*.egg
+.eggs/
+
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Docker
+docker-compose.override.yml
+
+# ML/AI Models (trop volumineux)
+models/*.pkl
+models/*.h5
+models/*.pt
+models/*.onnx
+models/*.joblib
+
+# Data (sensible)
+data/raw/
+data/processed/
+*.csv
+*.parquet
+*.avro
+
+# Jupyter
+.ipynb_checkpoints/
+
+# ChromaDB (vector store local)
+vectorstore/
+chroma_data/
+
+# Node
+node_modules/
