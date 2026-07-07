@@ -1,187 +1,183 @@
 import json
 import random
 import time
-from datetime import datetime, timezone
-from faker import Faker
+from datetime import datetime, timezone, timedelta, date
 
-fake = Faker("fr_FR")
+import os
+import sys
+# Ajout du dossier racine au PATH pour faciliter les imports
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-SENSOR_PROFILES = {
-    "temperature": {
-        "unit": "°C",
-        "interval": 1.0,
-        "normal_range": (20.0, 80.0),
-        "critical_min": 90.0,
-        "manufacturer": "Siemens Maroc",
-        "model": "TH-200X",
-        "drift": 0.5,       # Variation physique max par étape
-        "noise": 0.1,       # Petit bruit de mesure
-    },
-    "vibration": {
-        "unit": "mm/s",
-        "interval": 0.5,
-        "normal_range": (0.0, 5.0),
-        "critical_min": 8.0,
-        "manufacturer": "Fluke",
-        "model": "VB-805",
-        "drift": 0.2,
-        "noise": 0.05,
-    },
-    "pression": {
-        "unit": "bar",
-        "interval": 2.0,
-        "normal_range": (1.0, 10.0),
-        "critical_min": 12.0,
-        "manufacturer": "Bosch",
-        "model": "PR-3000",
-        "drift": 0.3,
-        "noise": 0.05,
-    },
-    "humidite": {
-        "unit": "%",
-        "interval": 5.0,
-        "normal_range": (30.0, 70.0),
-        "critical_min": 85.0,
-        "manufacturer": "Honeywell",
-        "model": "HM-40",
-        "drift": 1.0,
-        "noise": 0.2,
-    },
-    "consommation": {
-        "unit": "kW",
-        "interval": 1.0,
-        "normal_range": (100.0, 500.0),
-        "critical_min": 700.0,
-        "manufacturer": "Schneider Electric",
-        "model": "PM-5000",
-        "drift": 15.0,
-        "noise": 2.0,
-    },
-}
-
-# Dictionnaire global pour stocker l'état interne continu de chaque capteur
-SENSOR_STATES = {}
-
-def initialize_sensor_states(active_sensors):
-    """Initialise l'état physique initial et persistant des capteurs."""
-    for sensor in active_sensors:
-        s_id = sensor["id"]
-        s_type = sensor["type"]
-        profile = SENSOR_PROFILES[s_type]
-        
-        # On démarre au milieu de la plage normale
-        low, high = profile["normal_range"]
-        initial_value = (low + high) / 2.0
-        
-        SENSOR_STATES[s_id] = {
-            "current_value": initial_value,
-            "failure_remaining_steps": 0,  # Nombre de pas de temps où la panne va persister
-            "battery_level": round(random.uniform(85.0, 100.0), 1),
-            "calibration_date": fake.date_between(start_date="-1y", end_date="today").strftime("%Y-%m-%d")
-        }
-
-def generate_sensor_data(sensor_type, device_id, location):
-    profile = SENSOR_PROFILES[sensor_type]
-    state = SENSOR_STATES[device_id]
-    
-    # 1. Gestion de la décharge batterie réaliste (lente diminution)
-    state["battery_level"] = max(0.0, round(state["battery_level"] - 0.001, 3))
-    
-    # 2. Déclenchement d'une panne persistante (0.2% de chance à chaque pas)
-    if state["failure_remaining_steps"] == 0:
-        if random.random() < 0.002:
-            state["failure_remaining_steps"] = random.randint(5, 15)  # La panne dure entre 5 et 15 cycles
-
-    # 3. Calcul de la valeur physique continue
-    if state["failure_remaining_steps"] > 0:
-        # Mode Panne : La valeur dérive fortement vers le haut ou reste instable au-dessus du critique
-        drift_direction = 1.5 * profile["drift"]
-        state["current_value"] += drift_direction + random.uniform(-profile["noise"], profile["noise"])
-        
-        # Plafonner la valeur haute en anomalie
-        max_anomaly = profile["critical_min"] * 1.2
-        if state["current_value"] > max_anomaly:
-            state["current_value"] = max_anomaly
-            
-        status = "critical"
-        quality_score = round(random.uniform(0.70, 0.82), 2)
-        state["failure_remaining_steps"] -= 1
-    else:
-        # Mode Normal : Evolution par marche aléatoire (valeur précédente + petite variation)
-        change = random.uniform(-profile["drift"], profile["drift"])
-        state["current_value"] += change + random.uniform(-profile["noise"], profile["noise"])
-        
-        # Forcer le retour vers la plage normale si dérive trop forte (stabilisateur physique)
-        low, high = profile["normal_range"]
-        if state["current_value"] < low:
-            state["current_value"] = low + abs(change)
-        elif state["current_value"] > high:
-            state["current_value"] = high - abs(change)
-            
-        status = "normal"
-        quality_score = round(random.uniform(0.96, 1.0), 2)
-
-    # 4. Horodatage ISO 8601 UTC correct (Remplacement de utcnow obsolète)
-    current_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-
-    payload = {
-        "device_id": device_id,
-        "device_type": sensor_type,
-        "location": location,
-        "timestamp": current_time,
-        "value": round(state["current_value"], 1),
-        "unit": profile["unit"],
-        "status": status,
-        "metadata": {
-            "manufacturer": profile["manufacturer"],
-            "model": profile["model"],
-            "firmware_version": "2.1.4",
-            "calibration_date": state["calibration_date"],
-        },
-        "quality_score": quality_score,
-        "battery_level": round(state["battery_level"], 1),
-        "signal_strength": random.randint(-65, -45) if status == "normal" else random.randint(-85, -70),
-    }
-
-    return payload
-
-def run_simulator():
-    active_sensors = [
-        {"type": "temperature", "id": "sensor_temp_001", "loc": "casablanca_zone_ind"},
-        {"type": "vibration", "id": "sensor_vib_002", "loc": "tangier_med_zone"},
-        {"type": "pression", "id": "sensor_pres_003", "loc": "kenitra_industrial_zone"},
-        {"type": "humidite", "id": "sensor_hum_004", "loc": "stockage_central"},
-        {"type": "consommation", "id": "sensor_pow_005", "loc": "transformateur_1"},
-    ]
-
-    # Initialisation de la mémoire des capteurs
-    initialize_sensor_states(active_sensors)
-    
-    last_sent_time = {sensor["id"]: 0.0 for sensor in active_sensors}
-
-    print("--- Démarrage du Simulateur IoT Réaliste (Pour ML) ---")
-
+# Assurer l'encodage UTF-8 sur la sortie standard pour éviter les caractères brisés (ex: °C)
+if sys.stdout.encoding != 'utf-8':
     try:
-        while True:
-            current_now = time.time()
+        sys.stdout.reconfigure(encoding='utf-8')
+    except AttributeError:
+        pass
 
-            for sensor in active_sensors:
-                sensor_id = sensor["id"]
-                sensor_type = sensor["type"]
-                interval_required = SENSOR_PROFILES[sensor_type]["interval"]
+from simulators.config import KAFKA_BOOTSTRAP_SERVERS, KAFKA_TOPIC, ANOMALY_RATE, SENSOR_PROFILES, ACTIVE_SENSORS
+from simulators.schemas import SensorReading, SensorMetadata
 
-                if current_now - last_sent_time[sensor_id] >= interval_required:
-                    data = generate_sensor_data(sensor_type, sensor_id, sensor["loc"])
-                    json_output = json.dumps(data, indent=2, ensure_ascii=False)
-                    print(json_output)
-                    print("-" * 40)
+class IoTSimulator:
+    def __init__(self):
+        self.active_sensors = ACTIVE_SENSORS
+        self.profiles = SENSOR_PROFILES
+        self.anomaly_rate = ANOMALY_RATE
+        self.states = {}
+        self._initialize_sensor_states()
+        
+        # Initialisation facultative de Kafka
+        self.producer = None
+        try:
+            from confluent_kafka import Producer
+            self.producer = Producer({
+                'bootstrap.servers': ','.join(KAFKA_BOOTSTRAP_SERVERS),
+                'client.id': 'iot-simulator-producer'
+            })
+            print(f"[*] Connecté à Kafka sur {KAFKA_BOOTSTRAP_SERVERS}")
+        except Exception as e:
+            print(f"[-] Kafka n'est pas disponible en local, mode standalone (print) activé. (Détail: {e})")
 
-                    last_sent_time[sensor_id] = current_now
+    def _initialize_sensor_states(self):
+        for sensor in self.active_sensors:
+            s_id = sensor["id"]
+            s_type = sensor["type"]
+            profile = self.profiles[s_type]
+            low, high = profile["normal_range"]
+            initial_value = (low + high) / 2.0
+            
+            # Génération d'une date de calibration aléatoire dans l'année passée
+            random_days = random.randint(0, 365)
+            cal_date = (date.today() - timedelta(days=random_days)).strftime("%Y-%m-%d")
+            
+            self.states[s_id] = {
+                "current_value": initial_value,
+                "battery_level": round(random.uniform(85.0, 100.0), 1),
+                "calibration_date": cal_date
+            }
 
-            time.sleep(0.05)
+    def generate_reading(self, sensor_id: str, sensor_type: str) -> float:
+        """Génère une lecture physique continue réaliste avec bruit gaussien."""
+        state = self.states[sensor_id]
+        profile = self.profiles[sensor_type]
+        
+        # Evolution par marche aléatoire
+        drift_val = random.uniform(-profile["drift"], profile["drift"])
+        # Bruit gaussien avec écart-type noise_std
+        noise = random.gauss(0, profile["noise_std"])
+        
+        new_value = state["current_value"] + drift_val + noise
+        
+        # Régulation : forcer le retour vers la plage normale si dérive excessive
+        low, high = profile["normal_range"]
+        if new_value < low:
+            new_value = low + abs(drift_val)
+        elif new_value > high:
+            new_value = high - abs(drift_val)
+            
+        state["current_value"] = new_value
+        return new_value
 
-    except KeyboardInterrupt:
-        print("\n--- Simulateur Arrêté ---")
+    def inject_anomaly(self, sensor_type: str, value: float) -> tuple[float, str]:
+        """Injecte une anomalie contrôlée (10% du temps)."""
+        profile = self.profiles[sensor_type]
+        
+        # 10% de chance d'injecter une anomalie
+        if random.random() < self.anomaly_rate:
+            direction = random.choice([1, -1])
+            # Valeur critique en dehors des normales
+            anomaly_value = profile["critical_min"] + random.uniform(2.0, 15.0)
+            if direction == -1:
+                # Si valeur négative possible
+                anomaly_value = (profile["normal_range"][0] - random.uniform(5.0, 20.0))
+            
+            return round(anomaly_value, 2), "critical"
+        
+        return round(value, 2), "normal"
+
+    def produce_to_kafka(self, reading: SensorReading):
+        """Envoie la lecture validée par Pydantic sur le topic Kafka ou l'affiche dans la console."""
+        payload = reading.model_dump()
+        json_payload = json.dumps(payload, ensure_ascii=False)
+        
+        if self.producer:
+            try:
+                self.producer.produce(
+                    KAFKA_TOPIC, 
+                    key=reading.device_id, 
+                    value=json_payload.encode('utf-8')
+                )
+                self.producer.flush()
+            except Exception as e:
+                print(f"[-] Erreur de publication Kafka: {e}")
+                print(f"[Fallback Console] {json_payload}")
+        else:
+            print(f"[Console Output] {json_payload}\n")
+
+    def run(self):
+        print(f"--- Démarrage du Simulateur IoT (Taux d'anomalies: {self.anomaly_rate * 100}%) ---")
+        last_sent_time = {sensor["id"]: 0.0 for sensor in self.active_sensors}
+        
+        try:
+            while True:
+                current_now = time.time()
+                for sensor in self.active_sensors:
+                    sensor_id = sensor["id"]
+                    sensor_type = sensor["type"]
+                    interval = sensor["interval"]
+                    loc = sensor["loc"]
+                    profile = self.profiles[sensor_type]
+                    
+                    if current_now - last_sent_time[sensor_id] >= interval:
+                        state = self.states[sensor_id]
+                        # Décharge batterie réaliste
+                        state["battery_level"] = max(0.0, round(state["battery_level"] - 0.005, 3))
+                        
+                        # Génération de la valeur brute
+                        raw_val = self.generate_reading(sensor_id, sensor_type)
+                        
+                        # Injection éventuelle d'anomalie
+                        val, status = self.inject_anomaly(sensor_type, raw_val)
+                        
+                        # Détermination des scores et niveau de signal
+                        if status == "critical":
+                            quality_score = round(random.uniform(0.65, 0.80), 2)
+                            sig_strength = random.randint(-85, -70)
+                        else:
+                            quality_score = round(random.uniform(0.95, 1.0), 2)
+                            sig_strength = random.randint(-65, -45)
+                            
+                        current_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+                        
+                        # Validation via Pydantic
+                        reading_obj = SensorReading(
+                            device_id=sensor_id,
+                            device_type=sensor_type,
+                            location=loc,
+                            timestamp=current_time,
+                            value=val,
+                            unit=profile["unit"],
+                            status=status,
+                            metadata=SensorMetadata(
+                                manufacturer=profile["manufacturer"],
+                                model=profile["model"],
+                                firmware_version="2.1.4",
+                                calibration_date=state["calibration_date"]
+                            ),
+                            quality_score=quality_score,
+                            battery_level=round(state["battery_level"], 1),
+                            signal_strength=sig_strength
+                        )
+                        
+                        # Publication
+                        self.produce_to_kafka(reading_obj)
+                        
+                        last_sent_time[sensor_id] = current_now
+                        
+                time.sleep(0.05)
+        except KeyboardInterrupt:
+            print("\n--- Simulateur Arrêté ---")
 
 if __name__ == "__main__":
-    run_simulator()
+    sim = IoTSimulator()
+    sim.run()
