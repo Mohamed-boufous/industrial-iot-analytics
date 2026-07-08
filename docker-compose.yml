@@ -125,6 +125,18 @@ services:
     networks:
       - azura-network
 
+  # --- KAFKA UI (Interface Graphique) ---
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: "Azura-Cluster"
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: "kafka1:19092,kafka2:19092,kafka3:19092"
+    networks:
+      - azura-network
+
 volumes:
   mongo1_data:
   mongo2_data:
