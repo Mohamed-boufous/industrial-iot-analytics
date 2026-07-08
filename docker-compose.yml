@@ -1,6 +1,23 @@
 version: '3.8'
 
+x-kafka-common: &kafka-common
+  image: confluentinc/cp-kafka:7.4.0
+  environment:
+    KAFKA_PROCESS_ROLES: 'broker,controller'
+    KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+    KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT'
+    KAFKA_INTER_BROKER_LISTENER_NAME: 'INTERNAL'
+    KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+    KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+    KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+    KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    CLUSTER_ID: 'azura-kafka-cluster'
+    KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka1:29093,2@kafka2:29093,3@kafka3:29093'
+  networks:
+    - azura-network
+
 services:
+  # --- MONGODB CLUSTER ---
   mongo1:
     image: mongo:7.0
     container_name: mongo1
@@ -10,7 +27,7 @@ services:
     volumes:
       - mongo1_data:/data/db
     networks:
-      - mongo-cluster
+      - azura-network
 
   mongo2:
     image: mongo:7.0
@@ -21,7 +38,7 @@ services:
     volumes:
       - mongo2_data:/data/db
     networks:
-      - mongo-cluster
+      - azura-network
 
   mongo3:
     image: mongo:7.0
@@ -32,37 +49,90 @@ services:
     volumes:
       - mongo3_data:/data/db
     networks:
-      - mongo-cluster
+      - azura-network
 
-  zookeeper:
-    image: confluentinc/cp-zookeeper:7.4.0
-    container_name: zookeeper
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
-    networks:
-      - mongo-cluster
-
-  kafka:
-    image: confluentinc/cp-kafka:7.4.0
-    container_name: kafka
-    depends_on:
-      - zookeeper
+  # --- KAFKA KRAFT CLUSTER ---
+  kafka1:
+    <<: *kafka-common
+    container_name: kafka1
     ports:
       - "9092:9092"
     environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      <<: *kafka-common.environment
+      KAFKA_NODE_ID: 1
+      KAFKA_LISTENERS: 'INTERNAL://kafka1:19092,EXTERNAL://0.0.0.0:9092,CONTROLLER://kafka1:29093'
+      KAFKA_ADVERTISED_LISTENERS: 'INTERNAL://kafka1:19092,EXTERNAL://localhost:9092'
+    volumes:
+      - kafka1_data:/var/lib/kafka/data
+
+  kafka2:
+    <<: *kafka-common
+    container_name: kafka2
+    ports:
+      - "9093:9093"
+    environment:
+      <<: *kafka-common.environment
+      KAFKA_NODE_ID: 2
+      KAFKA_LISTENERS: 'INTERNAL://kafka2:19092,EXTERNAL://0.0.0.0:9093,CONTROLLER://kafka2:29093'
+      KAFKA_ADVERTISED_LISTENERS: 'INTERNAL://kafka2:19092,EXTERNAL://localhost:9093'
+    volumes:
+      - kafka2_data:/var/lib/kafka/data
+
+  kafka3:
+    <<: *kafka-common
+    container_name: kafka3
+    ports:
+      - "9094:9094"
+    environment:
+      <<: *kafka-common.environment
+      KAFKA_NODE_ID: 3
+      KAFKA_LISTENERS: 'INTERNAL://kafka3:19092,EXTERNAL://0.0.0.0:9094,CONTROLLER://kafka3:29093'
+      KAFKA_ADVERTISED_LISTENERS: 'INTERNAL://kafka3:19092,EXTERNAL://localhost:9094'
+    volumes:
+      - kafka3_data:/var/lib/kafka/data
+
+  # --- INIT KAFKA TOPICS ---
+  kafka-init:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: kafka-init
+    depends_on:
+      - kafka1
+      - kafka2
+      - kafka3
+    command: >
+      bash -c "
+      echo 'Waiting for Kafka to be ready...' &&
+      cub kafka-ready -b kafka1:19092 1 40 &&
+      kafka-topics --create --if-not-exists --bootstrap-server kafka1:19092 --partitions 6 --replication-factor 3 --topic iot-raw-data &&
+      kafka-topics --create --if-not-exists --bootstrap-server kafka1:19092 --partitions 3 --replication-factor 2 --topic iot-processed &&
+      kafka-topics --create --if-not-exists --bootstrap-server kafka1:19092 --partitions 2 --replication-factor 2 --topic iot-alerts &&
+      echo 'Kafka topics created successfully!'
+      "
     networks:
-      - mongo-cluster
+      - azura-network
+
+  # --- IOT SIMULATOR ---
+  iot-simulator:
+    build:
+      context: .
+      dockerfile: simulators/Dockerfile
+    container_name: iot-simulator
+    environment:
+      - KAFKA_BROKERS=kafka1:19092,kafka2:19092,kafka3:19092
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    networks:
+      - azura-network
 
 volumes:
   mongo1_data:
   mongo2_data:
   mongo3_data:
+  kafka1_data:
+  kafka2_data:
+  kafka3_data:
 
 networks:
-  mongo-cluster:
+  azura-network:
     driver: bridge
