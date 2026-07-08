@@ -1,18 +1,19 @@
 version: '3.8'
 
+x-kafka-env: &kafka-env
+  KAFKA_PROCESS_ROLES: 'broker,controller'
+  KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+  KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT'
+  KAFKA_INTER_BROKER_LISTENER_NAME: 'INTERNAL'
+  KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+  KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+  KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+  KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+  CLUSTER_ID: 'azura-kafka-cluster'
+  KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka1:29093,2@kafka2:29093,3@kafka3:29093'
+
 x-kafka-common: &kafka-common
   image: confluentinc/cp-kafka:7.4.0
-  environment:
-    KAFKA_PROCESS_ROLES: 'broker,controller'
-    KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
-    KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT'
-    KAFKA_INTER_BROKER_LISTENER_NAME: 'INTERNAL'
-    KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
-    KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
-    KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
-    KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-    CLUSTER_ID: 'azura-kafka-cluster'
-    KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka1:29093,2@kafka2:29093,3@kafka3:29093'
   networks:
     - azura-network
 
@@ -58,7 +59,7 @@ services:
     ports:
       - "9092:9092"
     environment:
-      <<: *kafka-common.environment
+      <<: *kafka-env
       KAFKA_NODE_ID: 1
       KAFKA_LISTENERS: 'INTERNAL://kafka1:19092,EXTERNAL://0.0.0.0:9092,CONTROLLER://kafka1:29093'
       KAFKA_ADVERTISED_LISTENERS: 'INTERNAL://kafka1:19092,EXTERNAL://localhost:9092'
@@ -71,7 +72,7 @@ services:
     ports:
       - "9093:9093"
     environment:
-      <<: *kafka-common.environment
+      <<: *kafka-env
       KAFKA_NODE_ID: 2
       KAFKA_LISTENERS: 'INTERNAL://kafka2:19092,EXTERNAL://0.0.0.0:9093,CONTROLLER://kafka2:29093'
       KAFKA_ADVERTISED_LISTENERS: 'INTERNAL://kafka2:19092,EXTERNAL://localhost:9093'
@@ -84,7 +85,7 @@ services:
     ports:
       - "9094:9094"
     environment:
-      <<: *kafka-common.environment
+      <<: *kafka-env
       KAFKA_NODE_ID: 3
       KAFKA_LISTENERS: 'INTERNAL://kafka3:19092,EXTERNAL://0.0.0.0:9094,CONTROLLER://kafka3:29093'
       KAFKA_ADVERTISED_LISTENERS: 'INTERNAL://kafka3:19092,EXTERNAL://localhost:9094'
