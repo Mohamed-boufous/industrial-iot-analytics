@@ -139,7 +139,7 @@ services:
       - azura-network
   # --- SPARK CLUSTER ---
   spark-master:
-    image: bitnami/spark:3.5.1
+    image: bitnamilegacy/spark:3.5.1
     container_name: spark-master
     environment:
       - SPARK_MODE=master
@@ -150,7 +150,7 @@ services:
       - azura-network
 
   spark-worker-1:
-    image: bitnami/spark:3.5.1
+    image: bitnamilegacy/spark:3.5.1
     container_name: spark-worker-1
     environment:
       - SPARK_MODE=worker
@@ -163,7 +163,7 @@ services:
       - azura-network
 
   spark-worker-2:
-    image: bitnami/spark:3.5.1
+    image: bitnamilegacy/spark:3.5.1
     container_name: spark-worker-2
     environment:
       - SPARK_MODE=worker
