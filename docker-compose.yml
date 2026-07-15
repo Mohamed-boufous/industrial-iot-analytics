@@ -175,6 +175,24 @@ services:
     networks:
       - azura-network
 
+  spark-submit:
+    image: bitnamilegacy/spark:3.5.1
+    container_name: spark-submit
+    depends_on:
+      - spark-master
+      - spark-worker-1
+      - spark-worker-2
+    volumes:
+      - ./spark/jobs:/opt/spark/jobs
+    command: >
+      bash -c "
+      echo 'En attente du Master Spark...' &&
+      sleep 15 &&
+      spark-submit --master spark://spark-master:7077 /opt/spark/jobs/stream_processor.py
+      "
+    networks:
+      - azura-network
+
 volumes:
   mongo1_data:
   mongo2_data:
