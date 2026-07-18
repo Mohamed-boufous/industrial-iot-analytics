@@ -141,17 +141,21 @@ services:
   spark-master:
     image: bitnamilegacy/spark:3.5.1
     container_name: spark-master
+    user: root
     environment:
       - SPARK_MODE=master
     ports:
       - "8081:8080" # Spark UI master
       - "7077:7077" # Spark Master port
+    volumes:
+      - spark_checkpoints:/opt/spark/checkpoints
     networks:
       - azura-network
 
   spark-worker-1:
     image: bitnamilegacy/spark:3.5.1
     container_name: spark-worker-1
+    user: root
     environment:
       - SPARK_MODE=worker
       - SPARK_MASTER_URL=spark://spark-master:7077
@@ -159,12 +163,15 @@ services:
       - SPARK_WORKER_CORES=2
     depends_on:
       - spark-master
+    volumes:
+      - spark_checkpoints:/opt/spark/checkpoints
     networks:
       - azura-network
 
   spark-worker-2:
     image: bitnamilegacy/spark:3.5.1
     container_name: spark-worker-2
+    user: root
     environment:
       - SPARK_MODE=worker
       - SPARK_MASTER_URL=spark://spark-master:7077
@@ -172,23 +179,30 @@ services:
       - SPARK_WORKER_CORES=2
     depends_on:
       - spark-master
+    volumes:
+      - spark_checkpoints:/opt/spark/checkpoints
     networks:
       - azura-network
 
   spark-submit:
     image: bitnamilegacy/spark:3.5.1
     container_name: spark-submit
+    user: root
     depends_on:
       - spark-master
       - spark-worker-1
       - spark-worker-2
     volumes:
       - ./spark/jobs:/opt/spark/jobs
+      - spark_checkpoints:/opt/spark/checkpoints
     command: >
       bash -c "
       echo 'En attente du Master Spark...' &&
       sleep 15 &&
-      spark-submit --master spark://spark-master:7077 /opt/spark/jobs/stream_processor.py
+      spark-submit \
+        --master spark://spark-master:7077 \
+        --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1 \
+        /opt/spark/jobs/stream_processor.py
       "
     networks:
       - azura-network
@@ -200,6 +214,7 @@ volumes:
   kafka1_data:
   kafka2_data:
   kafka3_data:
+  spark_checkpoints:
 
 networks:
   azura-network:
