@@ -19,6 +19,22 @@ if __name__ == "__main__":
     spark = create_spark_session()
     print("SparkSession créée avec succès !")
     
-    # On met le programme en pause (10 minutes) pour laisser le temps de vérifier l'interface web
-    print("En attente... Vous pouvez aller vérifier l'interface Spark UI.")
-    time.sleep(600)
+    # Étape 1 : Lecture depuis Kafka (Source)
+    print("Connexion au topic Kafka 'iot-raw-data'...")
+    df_raw = spark.readStream \
+        .format("kafka") \
+        .option("kafka.bootstrap.servers", "kafka1:19092,kafka2:19092,kafka3:19092") \
+        .option("subscribe", "iot-raw-data") \
+        .option("startingOffsets", "latest") \
+        .load()
+        
+    # Étape 2 : Écriture dans la console (Sink de test)
+    print("Démarrage du flux vers la console...")
+    query = df_raw.writeStream \
+        .format("console") \
+        .outputMode("append") \
+        .option("checkpointLocation", "/opt/spark/checkpoints/iot-raw-data") \
+        .start()
+        
+    # On bloque le programme pour qu'il écoute indéfiniment
+    query.awaitTermination()
