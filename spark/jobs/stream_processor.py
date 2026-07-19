@@ -1,4 +1,6 @@
 from pyspark.sql import SparkSession
+from pyspark.sql.types import StructType, StructField, StringType, DoubleType, TimestampType
+from pyspark.sql.functions import from_json
 import time
 
 def create_spark_session():
@@ -28,11 +30,33 @@ if __name__ == "__main__":
         .option("startingOffsets", "latest") \
         .load()
         
+    # Étape 1.1 : Traduction du Binaire vers Texte (Casting)
+    print("Conversion des données binaires en texte...")
+    df_string = df_raw.selectExpr("CAST(value AS STRING)")
+        
+    # Étape 1.2 : Parsing du JSON (Création de colonnes)
+    print("Définition du schéma et parsing du JSON...")
+    
+    # On dessine le "plan" corrigé de notre donnée IoT
+    json_schema = StructType([
+        StructField("device_id", StringType(), True),
+        StructField("device_type", StringType(), True),
+        StructField("value", DoubleType(), True),
+        StructField("unit", StringType(), True),
+        StructField("timestamp", StringType(), True) 
+    ])
+    
+    # On détruit le bloc de texte pour en faire de vraies colonnes
+    # (On ne garde que les données propres 'data.*')
+    df_parsed = df_string.withColumn("data", from_json("value", json_schema)) \
+                         .select("data.*")
+        
     # Étape 2 : Écriture dans la console (Sink de test)
     print("Démarrage du flux vers la console...")
-    query = df_raw.writeStream \
+    query = df_parsed.writeStream \
         .format("console") \
         .outputMode("append") \
+        .option("truncate", False) \
         .option("checkpointLocation", "/opt/spark/checkpoints/iot-raw-data") \
         .start()
         
