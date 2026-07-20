@@ -37,13 +37,28 @@ if __name__ == "__main__":
     # Étape 1.2 : Parsing du JSON (Création de colonnes)
     print("Définition du schéma et parsing du JSON...")
     
-    # On dessine le "plan" corrigé de notre donnée IoT
+    # On dessine le "plan" COMPLET de notre donnée IoT
+    # Avant : seulement 5 champs capturés sur 11 → 6 champs perdus !
+    # Après  : 11 champs capturés, dont l'objet "metadata" imbriqué
+    metadata_schema = StructType([
+        StructField("manufacturer", StringType(), True),
+        StructField("model", StringType(), True),
+        StructField("firmware_version", StringType(), True),
+        StructField("calibration_date", StringType(), True),
+    ])
+
     json_schema = StructType([
         StructField("device_id", StringType(), True),
         StructField("device_type", StringType(), True),
+        StructField("location", StringType(), True),
+        StructField("timestamp", StringType(), True),
         StructField("value", DoubleType(), True),
         StructField("unit", StringType(), True),
-        StructField("timestamp", StringType(), True) 
+        StructField("status", StringType(), True),
+        StructField("quality_score", DoubleType(), True),
+        StructField("battery_level", DoubleType(), True),
+        StructField("signal_strength", DoubleType(), True),
+        StructField("metadata", metadata_schema, True),
     ])
     
     # On détruit le bloc de texte pour en faire de vraies colonnes
