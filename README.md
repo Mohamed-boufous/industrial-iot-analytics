@@ -1,75 +1,45 @@
-# AzurA IoT Streaming Platform
+# AzurA : Plateforme Streaming IoT
 
-A robust, real-time IoT data processing and storage platform built with modern Big Data technologies. This project simulates industrial IoT sensors, streams the data in real-time, processes it, and ensures persistent storage with high availability.
+Bienvenue sur le dépôt du projet AzurA. Ce projet est une plateforme complète et automatisée de traitement de données Big Data en temps réel pour l'Internet des Objets (IoT). 
+Il permet de simuler, transporter, traiter et stocker des milliers de mesures industrielles par seconde, le tout avec une architecture professionnelle de haute disponibilité.
 
-![Architecture Diagram](docs/architecture_azura.gif)
+![Architecture AzurA](assets/architecture_azura.gif)
 
-## Features
+## Les Composants du Projet
 
-- Real-time IoT sensor simulation (Temperature, Pressure, Humidity, Vibration, Power)
-- Highly available message brokering using Apache Kafka (KRaft mode)
-- Real-time data processing and schema validation via Apache Spark Structured Streaming
-- Fault-tolerant data persistence using a MongoDB Replica Set
-- Containerized infrastructure for reproducible deployments
+L'architecture est entièrement conteneurisée via Docker et se divise en 3 grandes parties :
 
-## Technologies Used
+1. **Ingestion (Apache Kafka KRaft)** : Un script Python génère des données de capteurs virtuels (température, pression, etc.) et les publie en continu dans un cluster Kafka composé de 3 brokers (pour la tolérance aux pannes).
+2. **Traitement Temps Réel (Apache Spark)** : Un cluster Spark Structured Streaming consomme les messages Kafka, décode le flux binaire en JSON, valide le schéma des données, et prépare l'écriture en continu (Micro-batching).
+3. **Stockage Sécurisé (MongoDB)** : Les données traitées sont stockées dans une base MongoDB configurée en "Replica Set" à 3 nœuds. Si le serveur principal tombe en panne, un assistant prend le relais automatiquement sans perte de données.
 
-- **Apache Kafka**: Event streaming and message queuing
-- **Apache Spark**: Stream processing and data transformation
-- **MongoDB**: Document storage with Replica Set (rs0) for high availability
-- **Docker & Docker Compose**: Container orchestration and networking
-- **Python (PySpark)**: Data processing scripts
+## Comment Lancer le Projet
 
-## Installation
+Grâce à notre configuration DevOps avancée, **l'intégralité de l'infrastructure démarre et se configure automatiquement** avec une seule commande !
 
-### Prerequisites
-- Docker and Docker Compose installed
-- Git
+### 1. Prérequis
+- Docker et Docker Compose installés sur votre machine.
+- Ports disponibles : `27017` (MongoDB), `9092` (Kafka), `8080` (Kafka UI).
 
-### Setup
-
-1. Clone the repository:
-```bash
-git clone https://github.com/Mohamed-boufous/Azura_project.git
-cd Azura_project
-```
-
-2. Start the infrastructure:
+### 2. Démarrage
+Clonez le dépôt puis lancez la commande suivante à la racine du projet :
 ```bash
 docker-compose up -d
 ```
 
-3. Initialize the MongoDB Replica Set:
-```bash
-docker exec -it mongo1 mongosh --eval "rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'mongo1:27017'}, {_id: 1, host: 'mongo2:27017'}, {_id: 2, host: 'mongo3:27017'}]})"
-```
+### 3. Ce qui se passe en arrière-plan
+Dès le lancement, les scripts d'initialisation vont s'exécuter d'eux-mêmes :
+- Création automatique des topics Kafka (`iot-raw-data`, `iot-processed`, `iot-alerts`).
+- Démarrage des générateurs de données IoT.
+- Configuration automatique du cluster MongoDB (élection du Primary via `rs.initiate`).
+- Mise en attente intelligente de Spark qui ne démarrera le traitement que lorsque MongoDB sera 100% prêt.
 
-4. Restart Spark to establish the connection:
-```bash
-docker restart spark-submit
-```
-
-## Usage
-
-Once the infrastructure is running, the `iot-simulator` service will automatically begin generating and sending sensor data to the `iot-raw-data` Kafka topic.
-
-Spark processes these messages in micro-batches and writes them to the `azura_iot.raw_measurements` collection in MongoDB.
-
-To verify data ingestion:
+### 4. Vérification
+Une fois le démarrage terminé, vous pouvez :
+- Observer les flux de messages sur l'interface graphique **Kafka UI** accessible sur : `http://localhost:8080`
+- Vérifier que les données sont bien enregistrées en temps réel dans la base de données :
 ```bash
 docker exec -it mongo2 mongosh
 > use azura_iot
 > db.raw_measurements.countDocuments()
 ```
-
-To monitor Kafka topics, access the Kafka UI at `http://localhost:8080`.
-
-## Architecture Details
-
-- **Ingestion**: A Python script generates realistic industrial sensor data and produces it to a 3-broker Kafka cluster.
-- **Processing**: A Spark Structured Streaming job consumes binary Kafka messages, parses them using a predefined JSON schema, and structures them into a tabular format.
-- **Storage**: Processed records are appended to a MongoDB cluster configured as a 3-node Replica Set to guarantee zero data loss during node failures.
-
-## License
-
-This project is open-source and available under the MIT License.
