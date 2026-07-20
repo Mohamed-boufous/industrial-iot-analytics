@@ -52,6 +52,23 @@ services:
     networks:
       - azura-network
 
+  # --- INIT MONGODB REPLICA SET ---
+  mongo-init:
+    image: mongo:7.0
+    container_name: mongo-init
+    depends_on:
+      - mongo1
+      - mongo2
+      - mongo3
+    command: >
+      bash -c "
+      echo 'Attente du démarrage de MongoDB...' &&
+      sleep 10 &&
+      mongosh --host mongo1:27017 --eval \"rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'mongo1:27017'}, {_id: 1, host: 'mongo2:27017'}, {_id: 2, host: 'mongo3:27017'}]})\" || echo 'Replica set déjà initialisé'
+      "
+    networks:
+      - azura-network
+
   # --- KAFKA KRAFT CLUSTER ---
   kafka1:
     <<: *kafka-common
@@ -189,9 +206,14 @@ services:
     container_name: spark-submit
     user: root
     depends_on:
-      - spark-master
-      - spark-worker-1
-      - spark-worker-2
+      spark-master:
+        condition: service_started
+      spark-worker-1:
+        condition: service_started
+      spark-worker-2:
+        condition: service_started
+      mongo-init:
+        condition: service_completed_successfully
     volumes:
       - ./spark/jobs:/opt/spark/jobs
       - spark_checkpoints:/opt/spark/checkpoints
