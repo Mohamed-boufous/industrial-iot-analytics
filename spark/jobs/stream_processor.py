@@ -51,13 +51,15 @@ if __name__ == "__main__":
     df_parsed = df_string.withColumn("data", from_json("value", json_schema)) \
                          .select("data.*")
         
-    # Étape 2 : Écriture dans la console (Sink de test)
-    print("Démarrage du flux vers la console...")
+    # Étape 2 : Écriture dans la base de données MongoDB
+    print("Démarrage du flux vers MongoDB...")
     query = df_parsed.writeStream \
-        .format("console") \
+        .format("mongodb") \
+        .option("spark.mongodb.connection.uri", "mongodb://mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0") \
+        .option("spark.mongodb.database", "azura_iot") \
+        .option("spark.mongodb.collection", "raw_measurements") \
+        .option("checkpointLocation", "/opt/spark/checkpoints/iot-raw-data-mongo") \
         .outputMode("append") \
-        .option("truncate", False) \
-        .option("checkpointLocation", "/opt/spark/checkpoints/iot-raw-data") \
         .start()
         
     # On bloque le programme pour qu'il écoute indéfiniment
