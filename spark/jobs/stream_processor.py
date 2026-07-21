@@ -54,7 +54,8 @@ if __name__ == "__main__":
         StructField("timestamp", StringType(), True),
         StructField("value", DoubleType(), True),
         StructField("unit", StringType(), True),
-        StructField("status", StringType(), True),
+        # NOTE: 'status' n'est PAS lu depuis Kafka.
+        # Spark le calculera lui-même à l'Étape suivante (détection d'anomalie).
         StructField("quality_score", DoubleType(), True),
         StructField("battery_level", DoubleType(), True),
         StructField("signal_strength", DoubleType(), True),
