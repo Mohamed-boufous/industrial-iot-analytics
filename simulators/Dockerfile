@@ -13,4 +13,6 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 COPY simulators/ /app/simulators/
 
 ENV PYTHONPATH=/app
-CMD ["python", "simulators/iot_simulator.py"]
+ENV PYTHONUNBUFFERED=1
+
+CMD ["python", "-u", "simulators/iot_simulator.py"]
