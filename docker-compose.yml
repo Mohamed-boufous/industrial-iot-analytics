@@ -69,6 +69,21 @@ services:
     networks:
       - azura-network
 
+  # --- MONGO EXPRESS UI ---
+  mongo-express:
+    image: mongo-express:1.0.2-20
+    container_name: mongo-express
+    restart: always
+    ports:
+      - "8082:8081"
+    environment:
+      ME_CONFIG_MONGODB_URL: "mongodb://mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0"
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+    networks:
+      - azura-network
+
   # --- KAFKA KRAFT CLUSTER ---
   kafka1:
     <<: *kafka-common
