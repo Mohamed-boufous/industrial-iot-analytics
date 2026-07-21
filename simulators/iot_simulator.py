@@ -96,8 +96,17 @@ class IoTSimulator:
         
         return round(value, 2)
 
+    def _delivery_report(self, err, msg):
+        """Callback appelé automatiquement par librdkafka quand le message est confirmé."""
+        if err is not None:
+            print(f"[-] Échec d'envoi Kafka: {err}")
+        else:
+            key_str = msg.key().decode('utf-8') if msg.key() else "N/A"
+            print(f"[✓ Kafka] {key_str} transmis au topic '{msg.topic()}' [Partition {msg.partition()}]")
+        sys.stdout.flush()
+
     def produce_to_kafka(self, reading: SensorReading):
-        """Envoie la lecture validée par Pydantic sur le topic Kafka ou l'affiche dans la console."""
+        """Envoie la lecture validée par Pydantic sur le topic Kafka."""
         payload = reading.model_dump()
         json_payload = json.dumps(payload, ensure_ascii=False)
         
@@ -105,16 +114,19 @@ class IoTSimulator:
             try:
                 self.producer.produce(
                     KAFKA_TOPIC, 
-                    key=reading.device_id, 
-                    value=json_payload.encode('utf-8')
+                    key=reading.device_id.encode('utf-8'), 
+                    value=json_payload.encode('utf-8'),
+                    on_delivery=self._delivery_report
                 )
-                self.producer.flush()
-                print(f"[✓ Kafka] {reading.device_id} -> {reading.value} {reading.unit}")
+                # Servir les callbacks accumulés sans bloquer
+                self.producer.poll(0)
             except Exception as e:
                 print(f"[-] Erreur de publication Kafka: {e}")
                 print(f"[Fallback Console] {json_payload}")
+                sys.stdout.flush()
         else:
             print(f"[Console Output] {json_payload}\n")
+            sys.stdout.flush()
 
     def run(self):
         print(f"--- Démarrage du Simulateur IoT (Taux d'anomalies: {self.anomaly_rate * 100}%) ---")
