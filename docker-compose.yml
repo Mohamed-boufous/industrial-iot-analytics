@@ -214,6 +214,8 @@ services:
         condition: service_started
       mongo-init:
         condition: service_completed_successfully
+    ports:
+      - "4040:4040" # Spark Job UI (Driver)
     volumes:
       - ./spark/jobs:/opt/spark/jobs
       - spark_checkpoints:/opt/spark/checkpoints
