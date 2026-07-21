@@ -78,22 +78,23 @@ class IoTSimulator:
         state["current_value"] = new_value
         return new_value
 
-    def inject_anomaly(self, sensor_type: str, value: float) -> tuple[float, str]:
-        """Injecte une anomalie contrôlée (10% du temps)."""
+    def inject_anomaly(self, sensor_type: str, value: float) -> float:
+        """Injecte une valeur physiquement anormale (10% du temps) pour simuler des pannes réelles.
+        
+        NOTE ARCHITECTURALE : Le simulateur génère uniquement la VALEUR brute, même anormale.
+        La détection et le label ('critique', 'normal') sont de la responsabilité de Spark.
+        """
         profile = self.profiles[sensor_type]
         
-        # 10% de chance d'injecter une anomalie
+        # 10% de chance d'injecter une valeur hors-norme
         if random.random() < self.anomaly_rate:
             direction = random.choice([1, -1])
-            # Valeur critique en dehors des normales
             anomaly_value = profile["critical_min"] + random.uniform(2.0, 15.0)
             if direction == -1:
-                # Si valeur négative possible
                 anomaly_value = (profile["normal_range"][0] - random.uniform(5.0, 20.0))
-            
-            return round(anomaly_value, 2), "critical"
+            return round(anomaly_value, 2)
         
-        return round(value, 2), "normal"
+        return round(value, 2)
 
     def produce_to_kafka(self, reading: SensorReading):
         """Envoie la lecture validée par Pydantic sur le topic Kafka ou l'affiche dans la console."""
@@ -136,20 +137,17 @@ class IoTSimulator:
                         # Génération de la valeur brute
                         raw_val = self.generate_reading(sensor_id, sensor_type)
                         
-                        # Injection éventuelle d'anomalie
-                        val, status = self.inject_anomaly(sensor_type, raw_val)
+                        # Injection éventuelle d'une valeur physiquement anormale
+                        # Spark sera responsable de décider si c'est une alerte
+                        val = self.inject_anomaly(sensor_type, raw_val)
                         
-                        # Détermination des scores et niveau de signal
-                        if status == "critical":
-                            quality_score = round(random.uniform(0.65, 0.80), 2)
-                            sig_strength = random.randint(-85, -70)
-                        else:
-                            quality_score = round(random.uniform(0.95, 1.0), 2)
-                            sig_strength = random.randint(-65, -45)
+                        # Le score qualité reflète la qualité du signal réseau uniquement
+                        quality_score = round(random.uniform(0.90, 1.0), 2)
+                        sig_strength = random.randint(-65, -45)
                             
                         current_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
                         
-                        # Validation via Pydantic
+                        # Validation via Pydantic — status supprimé, sera calculé par Spark
                         reading_obj = SensorReading(
                             device_id=sensor_id,
                             device_type=sensor_type,
@@ -157,7 +155,6 @@ class IoTSimulator:
                             timestamp=current_time,
                             value=val,
                             unit=profile["unit"],
-                            status=status,
                             metadata=SensorMetadata(
                                 manufacturer=profile["manufacturer"],
                                 model=profile["model"],

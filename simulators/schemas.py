@@ -14,7 +14,8 @@ class SensorReading(BaseModel):
     timestamp: str
     value: float
     unit: str
-    status: Literal["normal", "critical"]
+    # NOTE: le champ 'status' a été retiré intentionnellement.
+    # La détection d'anomalie (normal/critical) est la responsabilité de Spark (couche traitement).
     metadata: SensorMetadata
     quality_score: float = Field(..., ge=0.0, le=1.0)
     battery_level: float = Field(..., ge=0.0, le=100.0)
