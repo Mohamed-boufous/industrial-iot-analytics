@@ -109,6 +109,7 @@ class IoTSimulator:
                     value=json_payload.encode('utf-8')
                 )
                 self.producer.flush()
+                print(f"[✓ Kafka] {reading.device_id} -> {reading.value} {reading.unit}")
             except Exception as e:
                 print(f"[-] Erreur de publication Kafka: {e}")
                 print(f"[Fallback Console] {json_payload}")
