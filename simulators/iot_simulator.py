@@ -8,10 +8,10 @@ import sys
 # Ajout du dossier racine au PATH pour faciliter les imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Assurer l'encodage UTF-8 sur la sortie standard pour éviter les caractères brisés (ex: °C)
+# Assurer l'encodage UTF-8 et forcer le flush automatique (line_buffering)
 if sys.stdout.encoding != 'utf-8':
     try:
-        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stdout.reconfigure(encoding='utf-8', line_buffering=True)
     except AttributeError:
         pass
 
@@ -172,9 +172,12 @@ class IoTSimulator:
                         
                         last_sent_time[sensor_id] = current_now
                         
+                # Forcer l'affichage immédiat dans Docker
+                sys.stdout.flush()
                 time.sleep(0.05)
         except KeyboardInterrupt:
             print("\n--- Simulateur Arrêté ---")
+            sys.stdout.flush()
 
 if __name__ == "__main__":
     sim = IoTSimulator()
