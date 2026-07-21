@@ -137,6 +137,7 @@ services:
     container_name: iot-simulator
     environment:
       - KAFKA_BROKERS=kafka1:19092,kafka2:19092,kafka3:19092
+      - PYTHONUNBUFFERED=1
     depends_on:
       kafka-init:
         condition: service_completed_successfully
