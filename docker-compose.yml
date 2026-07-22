@@ -170,18 +170,43 @@ services:
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: "kafka1:19092,kafka2:19092,kafka3:19092"
     networks:
       - azura-network
+  # --- ZOOKEEPER ---
+  zookeeper:
+    image: zookeeper:3.8
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    networks:
+      - azura-network
+
   # --- SPARK CLUSTER ---
-  spark-master:
+  spark-master-1:
     image: bitnamilegacy/spark:3.5.1
-    container_name: spark-master
+    container_name: spark-master-1
     user: root
     environment:
       - SPARK_MODE=master
+      - SPARK_DAEMON_JAVA_OPTS=-Dspark.deploy.recoveryMode=ZOOKEEPER -Dspark.deploy.zookeeper.url=zookeeper:2181 -Dspark.deploy.zookeeper.dir=/spark
     ports:
-      - "8081:8080" # Spark UI master
-      - "7077:7077" # Spark Master port
-    volumes:
-      - spark_checkpoints:/opt/spark/checkpoints
+      - "8081:8080" # Spark UI master 1
+      - "7077:7077" # Spark Master 1 port
+    depends_on:
+      - zookeeper
+    networks:
+      - azura-network
+
+  spark-master-2:
+    image: bitnamilegacy/spark:3.5.1
+    container_name: spark-master-2
+    user: root
+    environment:
+      - SPARK_MODE=master
+      - SPARK_DAEMON_JAVA_OPTS=-Dspark.deploy.recoveryMode=ZOOKEEPER -Dspark.deploy.zookeeper.url=zookeeper:2181 -Dspark.deploy.zookeeper.dir=/spark
+    ports:
+      - "8083:8080" # Spark UI master 2
+      - "7078:7077" # Spark Master 2 port
+    depends_on:
+      - zookeeper
     networks:
       - azura-network
 
@@ -191,13 +216,12 @@ services:
     user: root
     environment:
       - SPARK_MODE=worker
-      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_MASTER_URL=spark://spark-master-1:7077,spark-master-2:7077
       - SPARK_WORKER_MEMORY=2G
       - SPARK_WORKER_CORES=2
     depends_on:
-      - spark-master
-    volumes:
-      - spark_checkpoints:/opt/spark/checkpoints
+      - spark-master-1
+      - spark-master-2
     networks:
       - azura-network
 
@@ -207,13 +231,12 @@ services:
     user: root
     environment:
       - SPARK_MODE=worker
-      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_MASTER_URL=spark://spark-master-1:7077,spark-master-2:7077
       - SPARK_WORKER_MEMORY=2G
       - SPARK_WORKER_CORES=2
     depends_on:
-      - spark-master
-    volumes:
-      - spark_checkpoints:/opt/spark/checkpoints
+      - spark-master-1
+      - spark-master-2
     networks:
       - azura-network
 
@@ -222,25 +245,21 @@ services:
     container_name: spark-submit
     user: root
     depends_on:
-      spark-master:
-        condition: service_started
-      spark-worker-1:
-        condition: service_started
-      spark-worker-2:
-        condition: service_started
-      mongo-init:
-        condition: service_completed_successfully
+      - zookeeper
+      - spark-master-1
+      - spark-master-2
+      - spark-worker-1
+      - spark-worker-2
     ports:
       - "4040:4040" # Spark Job UI (Driver)
     volumes:
       - ./spark/jobs:/opt/spark/jobs
-      - spark_checkpoints:/opt/spark/checkpoints
     command: >
       bash -c "
-      echo 'En attente du Master Spark...' &&
-      sleep 15 &&
+      echo 'En attente des Masters Spark...' &&
+      sleep 20 &&
       spark-submit \
-        --master spark://spark-master:7077 \
+        --master spark://spark-master-1:7077,spark-master-2:7077 \
         --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1,org.mongodb.spark:mongo-spark-connector_2.12:10.3.0 \
         /opt/spark/jobs/stream_processor.py
       "
