@@ -71,7 +71,7 @@ if __name__ == "__main__":
     print("Démarrage du flux vers MongoDB...")
     query = df_parsed.writeStream \
         .format("mongodb") \
-        .option("spark.mongodb.connection.uri", "mongodb://mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0") \
+        .option("spark.mongodb.connection.uri", "mongodb://mongos-router:27017") \
         .option("spark.mongodb.database", "azura_iot") \
         .option("spark.mongodb.collection", "raw_measurements") \
         .option("checkpointLocation", "/opt/spark/checkpoints/iot-raw-data-mongo") \

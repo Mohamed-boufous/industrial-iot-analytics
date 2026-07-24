@@ -18,53 +18,123 @@ x-kafka-common: &kafka-common
     - azura-network
 
 services:
-  # --- MONGODB CLUSTER ---
-  mongo1:
+  # --- MONGODB CONFIG SERVERS (rs-config) ---
+  mongo-config-1:
     image: mongo:7.0
-    container_name: mongo1
-    command: mongod --replSet rs0 --bind_ip_all
+    container_name: mongo-config-1
+    command: mongod --configsvr --replSet rs-config --port 27019 --bind_ip_all --wiredTigerCacheSizeGB 0.25
+    networks:
+      - azura-network
+
+  mongo-config-2:
+    image: mongo:7.0
+    container_name: mongo-config-2
+    command: mongod --configsvr --replSet rs-config --port 27019 --bind_ip_all --wiredTigerCacheSizeGB 0.25
+    networks:
+      - azura-network
+
+  mongo-config-3:
+    image: mongo:7.0
+    container_name: mongo-config-3
+    command: mongod --configsvr --replSet rs-config --port 27019 --bind_ip_all --wiredTigerCacheSizeGB 0.25
+    networks:
+      - azura-network
+
+  # --- MONGODB SHARD 1 (rs-shard1) ---
+  mongo-shard1-1:
+    image: mongo:7.0
+    container_name: mongo-shard1-1
+    command: mongod --shardsvr --replSet rs-shard1 --port 27018 --bind_ip_all --wiredTigerCacheSizeGB 0.25
+    volumes:
+      - mongo_shard1_1_data:/data/db
+    networks:
+      - azura-network
+
+  mongo-shard1-2:
+    image: mongo:7.0
+    container_name: mongo-shard1-2
+    command: mongod --shardsvr --replSet rs-shard1 --port 27018 --bind_ip_all --wiredTigerCacheSizeGB 0.25
+    volumes:
+      - mongo_shard1_2_data:/data/db
+    networks:
+      - azura-network
+
+  mongo-shard1-3:
+    image: mongo:7.0
+    container_name: mongo-shard1-3
+    command: mongod --shardsvr --replSet rs-shard1 --port 27018 --bind_ip_all --wiredTigerCacheSizeGB 0.25
+    volumes:
+      - mongo_shard1_3_data:/data/db
+    networks:
+      - azura-network
+
+  # --- MONGODB SHARD 2 (rs-shard2) ---
+  mongo-shard2-1:
+    image: mongo:7.0
+    container_name: mongo-shard2-1
+    command: mongod --shardsvr --replSet rs-shard2 --port 27020 --bind_ip_all --wiredTigerCacheSizeGB 0.25
+    volumes:
+      - mongo_shard2_1_data:/data/db
+    networks:
+      - azura-network
+
+  mongo-shard2-2:
+    image: mongo:7.0
+    container_name: mongo-shard2-2
+    command: mongod --shardsvr --replSet rs-shard2 --port 27020 --bind_ip_all --wiredTigerCacheSizeGB 0.25
+    volumes:
+      - mongo_shard2_2_data:/data/db
+    networks:
+      - azura-network
+
+  mongo-shard2-3:
+    image: mongo:7.0
+    container_name: mongo-shard2-3
+    command: mongod --shardsvr --replSet rs-shard2 --port 27020 --bind_ip_all --wiredTigerCacheSizeGB 0.25
+    volumes:
+      - mongo_shard2_3_data:/data/db
+    networks:
+      - azura-network
+
+  # --- MONGODB ROUTER (Mongos) ---
+  mongos-router:
+    image: mongo:7.0
+    container_name: mongos-router
+    command: mongos --configdb rs-config/mongo-config-1:27019,mongo-config-2:27019,mongo-config-3:27019 --bind_ip_all --port 27017
     ports:
       - "27017:27017"
-    volumes:
-      - mongo1_data:/data/db
+    depends_on:
+      - mongo-config-1
+      - mongo-config-2
+      - mongo-config-3
+      - mongo-shard1-1
+      - mongo-shard2-1
     networks:
       - azura-network
 
-  mongo2:
-    image: mongo:7.0
-    container_name: mongo2
-    command: mongod --replSet rs0 --bind_ip_all
-    ports:
-      - "27018:27017"
-    volumes:
-      - mongo2_data:/data/db
-    networks:
-      - azura-network
-
-  mongo3:
-    image: mongo:7.0
-    container_name: mongo3
-    command: mongod --replSet rs0 --bind_ip_all
-    ports:
-      - "27019:27017"
-    volumes:
-      - mongo3_data:/data/db
-    networks:
-      - azura-network
-
-  # --- INIT MONGODB REPLICA SET ---
+  # --- INIT SHARDED CLUSTER ---
   mongo-init:
     image: mongo:7.0
     container_name: mongo-init
     depends_on:
-      - mongo1
-      - mongo2
-      - mongo3
+      - mongos-router
     command: >
       bash -c "
-      echo 'Attente du démarrage de MongoDB...' &&
+      echo 'Initialisation des Replica Sets MongoDB...' &&
       sleep 10 &&
-      mongosh --host mongo1:27017 --eval \"rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'mongo1:27017'}, {_id: 1, host: 'mongo2:27017'}, {_id: 2, host: 'mongo3:27017'}]})\" || echo 'Replica set déjà initialisé'
+      mongosh --host mongo-config-1:27019 --eval \"rs.initiate({_id: 'rs-config', configsvr: true, members: [{_id:0, host:'mongo-config-1:27019'}, {_id:1, host:'mongo-config-2:27019'}, {_id:2, host:'mongo-config-3:27019'}]})\" || true &&
+      mongosh --host mongo-shard1-1:27018 --eval \"rs.initiate({_id: 'rs-shard1', members: [{_id:0, host:'mongo-shard1-1:27018'}, {_id:1, host:'mongo-shard1-2:27018'}, {_id:2, host:'mongo-shard1-3:27018'}]})\" || true &&
+      mongosh --host mongo-shard2-1:27020 --eval \"rs.initiate({_id: 'rs-shard2', members: [{_id:0, host:'mongo-shard2-1:27020'}, {_id:1, host:'mongo-shard2-2:27020'}, {_id:2, host:'mongo-shard2-3:27020'}]})\" || true &&
+      echo 'Attente de la stabilisation des Replica Sets...' &&
+      sleep 15 &&
+      echo 'Ajout des Shards et activation du Sharding...' &&
+      mongosh --host mongos-router:27017 --eval \"
+        try { sh.addShard('rs-shard1/mongo-shard1-1:27018,mongo-shard1-2:27018,mongo-shard1-3:27018'); } catch(e){}
+        try { sh.addShard('rs-shard2/mongo-shard2-1:27020,mongo-shard2-2:27020,mongo-shard2-3:27020'); } catch(e){}
+        try { sh.enableSharding('azura_iot'); } catch(e){}
+        try { sh.shardCollection('azura_iot.raw_measurements', { device_id: 'hashed' }); } catch(e){}
+        print('Sharded Cluster MongoDB configuré avec succès !');
+      \"
       "
     networks:
       - azura-network
@@ -77,7 +147,7 @@ services:
     ports:
       - "8082:8081"
     environment:
-      ME_CONFIG_MONGODB_URL: "mongodb://mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0"
+      ME_CONFIG_MONGODB_URL: "mongodb://mongos-router:27017"
     depends_on:
       mongo-init:
         condition: service_completed_successfully
@@ -267,9 +337,12 @@ services:
       - azura-network
 
 volumes:
-  mongo1_data:
-  mongo2_data:
-  mongo3_data:
+  mongo_shard1_1_data:
+  mongo_shard1_2_data:
+  mongo_shard1_3_data:
+  mongo_shard2_1_data:
+  mongo_shard2_2_data:
+  mongo_shard2_3_data:
   kafka1_data:
   kafka2_data:
   kafka3_data:
