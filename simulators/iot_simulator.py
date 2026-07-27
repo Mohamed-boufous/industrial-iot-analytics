@@ -24,7 +24,11 @@ class IoTSimulator:
         self.profiles = SENSOR_PROFILES
         self.anomaly_rate = ANOMALY_RATE
         self.states = {}
+        self.start_time = time.time()
+        self.fault_scenarios = {}
+        
         self._initialize_sensor_states()
+        self._setup_fault_scenarios()
         
         # Initialisation facultative de Kafka
         self.producer = None
@@ -37,6 +41,40 @@ class IoTSimulator:
             print(f"[*] Connecté à Kafka sur {KAFKA_BOOTSTRAP_SERVERS}")
         except Exception as e:
             print(f"[-] Kafka n'est pas disponible en local, mode standalone (print) activé. (Détail: {e})")
+
+    def _setup_fault_scenarios(self):
+        """Configure le scénario temporel accéléré :
+        - 4 capteurs choisis au hasard parmi les 15.
+        - Pannes déclenchées aléatoirement entre 1 min (60s) et 2 min (120s).
+        - 2 pannes TEMPORAIRES : arrêtent de dériver et reviennent à la normale à t = 3 min (180s).
+        - 2 pannes PERMANENTES : continuent de dériver indéfiniment.
+        """
+        all_ids = [s["id"] for s in self.active_sensors]
+        selected_fault_ids = random.sample(all_ids, 4)
+        
+        temp_fault_ids = selected_fault_ids[:2]   # 2 pannes temporaires
+        perm_fault_ids = selected_fault_ids[2:]   # 2 pannes permanentes
+        
+        for s_id in selected_fault_ids:
+            # Déclenchement échelonné entre 1 minute (60s) et 2 minutes (120s)
+            start_delay = random.uniform(60.0, 120.0)
+            is_temporary = s_id in temp_fault_ids
+            
+            self.fault_scenarios[s_id] = {
+                "start_delay": start_delay,
+                "is_temporary": is_temporary,
+                "end_time": 180.0 if is_temporary else float('inf'), # Max 3 min (180s)
+                "direction": random.choice([1, -1])  # 1 = surchauffe/surpression, -1 = sous-pression/gel
+            }
+        
+        print("\n" + "="*70)
+        print("  [SCÉNARIO TEMPOREL CONFIGURÉ (1 à 3 min)]")
+        print("  - t = 0s à 60s (0-1 min) : Tous les capteurs sont 100% NORMAUX")
+        for s_id, sc in self.fault_scenarios.items():
+            kind = "TEMPORAIRE (résolue à t = 3 min)" if sc["is_temporary"] else "PERMANENTE (nécessite intervention)"
+            print(f"  - Capteur {s_id} : Panne {kind} déclenchée à t = {round(sc['start_delay'])}s")
+        print("="*70 + "\n")
+
 
     def _initialize_sensor_states(self):
         for sensor in self.active_sensors:
@@ -68,33 +106,54 @@ class IoTSimulator:
         
         new_value = state["current_value"] + drift_val + noise
         
-        # Régulation : forcer le retour vers la plage normale si dérive excessive
-        low, high = profile["normal_range"]
-        if new_value < low:
-            new_value = low + abs(drift_val)
-        elif new_value > high:
-            new_value = high - abs(drift_val)
+        # Régulation : forcer le retour vers la plage normale si dérive excessive (sauf si en panne)
+        if sensor_id not in self.fault_scenarios:
+            low, high = profile["normal_range"]
+            if new_value < low:
+                new_value = low + abs(drift_val)
+            elif new_value > high:
+                new_value = high - abs(drift_val)
             
         state["current_value"] = new_value
         return new_value
 
-    def inject_anomaly(self, sensor_type: str, value: float) -> float:
-        """Injecte une valeur physiquement anormale (10% du temps) pour simuler des pannes réelles.
+    def inject_anomaly(self, sensor_id: str, sensor_type: str, value: float) -> float:
+        """Simule la dérive de panne en fonction du temps écoulé depuis le lancement."""
+        if sensor_id not in self.fault_scenarios:
+            return round(value, 2)
+            
+        scenario = self.fault_scenarios[sensor_id]
+        elapsed = time.time() - self.start_time
         
-        NOTE ARCHITECTURALE : Le simulateur génère uniquement la VALEUR brute, même anormale.
-        La détection et le label ('critique', 'normal') sont de la responsabilité de Spark.
-        """
+        # Phase 1 : Avant le déclenchement de la panne (0 à start_delay) ➔ NORMAL
+        if elapsed < scenario["start_delay"]:
+            return round(value, 2)
+            
+        state = self.states[sensor_id]
         profile = self.profiles[sensor_type]
+        direction = scenario["direction"]
         
-        # 10% de chance d'injecter une valeur hors-norme
-        if random.random() < self.anomaly_rate:
-            direction = random.choice([1, -1])
-            anomaly_value = profile["critical_min"] + random.uniform(2.0, 15.0)
-            if direction == -1:
-                anomaly_value = (profile["normal_range"][0] - random.uniform(5.0, 20.0))
-            return round(anomaly_value, 2)
-        
-        return round(value, 2)
+        # Phase 2 : Pendant la panne (entre start_delay et end_time) ➔ DÉRIVE ANORMALE
+        if elapsed <= scenario["end_time"]:
+            # Augmentation/Diminution progressive par étape
+            increment = profile["drift"] * 1.8 * direction
+            state["current_value"] = state["current_value"] + increment
+            return round(state["current_value"], 2)
+            
+        # Phase 3 : Après end_time pour les pannes TEMPORAIRES ➔ RETOUR PROGRESSIF À LA NORMALE
+        if scenario["is_temporary"]:
+            low, high = profile["normal_range"]
+            normal_target = (low + high) / 2.0
+            # On ramène doucement la valeur vers la normale
+            if state["current_value"] > normal_target:
+                state["current_value"] = max(normal_target, state["current_value"] - profile["drift"] * 2.0)
+            elif state["current_value"] < normal_target:
+                state["current_value"] = min(normal_target, state["current_value"] + profile["drift"] * 2.0)
+            return round(state["current_value"], 2)
+            
+        return round(state["current_value"], 2)
+
+
 
     def _delivery_report(self, err, msg):
         """Callback appelé automatiquement par librdkafka quand le message est confirmé."""
@@ -150,9 +209,8 @@ class IoTSimulator:
                         # Génération de la valeur brute
                         raw_val = self.generate_reading(sensor_id, sensor_type)
                         
-                        # Injection éventuelle d'une valeur physiquement anormale
-                        # Spark sera responsable de décider si c'est une alerte
-                        val = self.inject_anomaly(sensor_type, raw_val)
+                        # Injection éventuelle d'une dérive de panne (ex: sensor_temp_002)
+                        val = self.inject_anomaly(sensor_id, sensor_type, raw_val)
                         
                         # Le score qualité reflète la qualité du signal réseau uniquement
                         quality_score = round(random.uniform(0.90, 1.0), 2)
