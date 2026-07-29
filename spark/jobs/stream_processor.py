@@ -74,7 +74,7 @@ if __name__ == "__main__":
         .format("kafka") \
         .option("kafka.bootstrap.servers", "kafka1:19092,kafka2:19092,kafka3:19092") \
         .option("subscribe", "iot-raw-data") \
-        .option("startingOffsets", "latest") \
+        .option("startingOffsets", "earliest") \
         .load()
         
     # Étape 1.1 : Traduction du Binaire vers Texte (Casting)
