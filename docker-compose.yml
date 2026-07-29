@@ -178,6 +178,11 @@ services:
       KAFKA_ADVERTISED_LISTENERS: 'INTERNAL://kafka1:19092,EXTERNAL://localhost:9092'
     volumes:
       - kafka1_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "kafka1:19092"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   kafka2:
     <<: *kafka-common
@@ -191,6 +196,11 @@ services:
       KAFKA_ADVERTISED_LISTENERS: 'INTERNAL://kafka2:19092,EXTERNAL://localhost:9093'
     volumes:
       - kafka2_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "kafka2:19092"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   kafka3:
     <<: *kafka-common
@@ -204,6 +214,11 @@ services:
       KAFKA_ADVERTISED_LISTENERS: 'INTERNAL://kafka3:19092,EXTERNAL://localhost:9094'
     volumes:
       - kafka3_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "kafka3:19092"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # --- INIT KAFKA TOPICS ---
   kafka-init:
@@ -295,6 +310,11 @@ services:
       - zookeeper-1
       - zookeeper-2
       - zookeeper-3
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - azura-network
 
@@ -312,6 +332,33 @@ services:
       - zookeeper-1
       - zookeeper-2
       - zookeeper-3
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - azura-network
+
+  spark-master-2:
+    image: bitnamilegacy/spark:3.5.1
+    container_name: spark-master-2
+    user: root
+    environment:
+      - SPARK_MODE=master
+      - SPARK_DAEMON_JAVA_OPTS=-Dspark.deploy.recoveryMode=ZOOKEEPER -Dspark.deploy.zookeeper.url=zookeeper-1:2181,zookeeper-2:2181,zookeeper-3:2181 -Dspark.deploy.zookeeper.dir=/spark
+    ports:
+      - "8083:8080" # Spark UI master 2
+      - "7078:7077" # Spark Master 2 port
+    depends_on:
+      - zookeeper-1
+      - zookeeper-2
+      - zookeeper-3
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - azura-network
 
