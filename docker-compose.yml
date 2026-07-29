@@ -240,12 +240,31 @@ services:
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: "kafka1:19092,kafka2:19092,kafka3:19092"
     networks:
       - azura-network
-  # --- ZOOKEEPER ---
-  zookeeper:
+  # --- ZOOKEEPER CLUSTER (Quorum HA) ---
+  zookeeper-1:
     image: zookeeper:3.8
-    container_name: zookeeper
-    ports:
-      - "2181:2181"
+    container_name: zookeeper-1
+    environment:
+      ZOO_MY_ID: 1
+      ZOO_SERVERS: server.1=zookeeper-1:2888:3888;2181 server.2=zookeeper-2:2888:3888;2181 server.3=zookeeper-3:2888:3888;2181
+    networks:
+      - azura-network
+
+  zookeeper-2:
+    image: zookeeper:3.8
+    container_name: zookeeper-2
+    environment:
+      ZOO_MY_ID: 2
+      ZOO_SERVERS: server.1=zookeeper-1:2888:3888;2181 server.2=zookeeper-2:2888:3888;2181 server.3=zookeeper-3:2888:3888;2181
+    networks:
+      - azura-network
+
+  zookeeper-3:
+    image: zookeeper:3.8
+    container_name: zookeeper-3
+    environment:
+      ZOO_MY_ID: 3
+      ZOO_SERVERS: server.1=zookeeper-1:2888:3888;2181 server.2=zookeeper-2:2888:3888;2181 server.3=zookeeper-3:2888:3888;2181
     networks:
       - azura-network
 
@@ -256,12 +275,14 @@ services:
     user: root
     environment:
       - SPARK_MODE=master
-      - SPARK_DAEMON_JAVA_OPTS=-Dspark.deploy.recoveryMode=ZOOKEEPER -Dspark.deploy.zookeeper.url=zookeeper:2181 -Dspark.deploy.zookeeper.dir=/spark
+      - SPARK_DAEMON_JAVA_OPTS=-Dspark.deploy.recoveryMode=ZOOKEEPER -Dspark.deploy.zookeeper.url=zookeeper-1:2181,zookeeper-2:2181,zookeeper-3:2181 -Dspark.deploy.zookeeper.dir=/spark
     ports:
       - "8081:8080" # Spark UI master 1
       - "7077:7077" # Spark Master 1 port
     depends_on:
-      - zookeeper
+      - zookeeper-1
+      - zookeeper-2
+      - zookeeper-3
     networks:
       - azura-network
 
@@ -271,12 +292,14 @@ services:
     user: root
     environment:
       - SPARK_MODE=master
-      - SPARK_DAEMON_JAVA_OPTS=-Dspark.deploy.recoveryMode=ZOOKEEPER -Dspark.deploy.zookeeper.url=zookeeper:2181 -Dspark.deploy.zookeeper.dir=/spark
+      - SPARK_DAEMON_JAVA_OPTS=-Dspark.deploy.recoveryMode=ZOOKEEPER -Dspark.deploy.zookeeper.url=zookeeper-1:2181,zookeeper-2:2181,zookeeper-3:2181 -Dspark.deploy.zookeeper.dir=/spark
     ports:
       - "8083:8080" # Spark UI master 2
       - "7078:7077" # Spark Master 2 port
     depends_on:
-      - zookeeper
+      - zookeeper-1
+      - zookeeper-2
+      - zookeeper-3
     networks:
       - azura-network
 
@@ -315,7 +338,9 @@ services:
     container_name: spark-submit
     user: root
     depends_on:
-      - zookeeper
+      - zookeeper-1
+      - zookeeper-2
+      - zookeeper-3
       - spark-master-1
       - spark-master-2
       - spark-worker-1
@@ -324,6 +349,7 @@ services:
       - "4040:4040" # Spark Job UI (Driver)
     volumes:
       - ./spark/jobs:/opt/spark/jobs
+      - spark_checkpoints:/opt/spark/checkpoints
     command: >
       bash -c "
       echo 'En attente des Masters Spark...' &&
