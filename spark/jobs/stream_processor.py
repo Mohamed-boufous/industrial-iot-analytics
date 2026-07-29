@@ -56,6 +56,7 @@ def create_spark_session():
     """
     spark = SparkSession.builder \
         .appName("AzurA-Streaming") \
+        .config("spark.sql.shuffle.partitions", "6") \
         .getOrCreate()
         
     # On réduit le niveau de logs pour ne pas polluer la console avec des informations inutiles
