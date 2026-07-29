@@ -91,6 +91,7 @@ if __name__ == "__main__":
         StructField("calibration_date", StringType(), True),
     ])
 
+
     json_schema = StructType([
         StructField("device_id", StringType(), True),
         StructField("device_type", StringType(), True),
