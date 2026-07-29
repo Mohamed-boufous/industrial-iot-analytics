@@ -23,6 +23,8 @@ services:
     image: mongo:7.0
     container_name: mongo-config-1
     command: mongod --configsvr --replSet rs-config --port 27019 --bind_ip_all --wiredTigerCacheSizeGB 0.25
+    volumes:
+      - mongo_config_1_data:/data/configdb
     networks:
       - azura-network
 
@@ -30,6 +32,8 @@ services:
     image: mongo:7.0
     container_name: mongo-config-2
     command: mongod --configsvr --replSet rs-config --port 27019 --bind_ip_all --wiredTigerCacheSizeGB 0.25
+    volumes:
+      - mongo_config_2_data:/data/configdb
     networks:
       - azura-network
 
@@ -37,6 +41,8 @@ services:
     image: mongo:7.0
     container_name: mongo-config-3
     command: mongod --configsvr --replSet rs-config --port 27019 --bind_ip_all --wiredTigerCacheSizeGB 0.25
+    volumes:
+      - mongo_config_3_data:/data/configdb
     networks:
       - azura-network
 
@@ -109,6 +115,11 @@ services:
       - mongo-config-3
       - mongo-shard1-1
       - mongo-shard2-1
+    healthcheck:
+      test: ["CMD", "mongosh", "--port", "27017", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - azura-network
 
@@ -365,6 +376,9 @@ services:
       - azura-network
 
 volumes:
+  mongo_config_1_data:
+  mongo_config_2_data:
+  mongo_config_3_data:
   mongo_shard1_1_data:
   mongo_shard1_2_data:
   mongo_shard1_3_data:
