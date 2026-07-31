@@ -167,8 +167,19 @@ if __name__ == "__main__":
         .option("checkpointLocation", "/opt/spark/checkpoints/iot-alerts-kafka") \
         .outputMode("append") \
         .start()
-        
-    # On maintient la SparkSession active pour les 2 requêtes simultanées
+    print("Démarrage du flux d'iots vers Kafka (topic: iot-processed)...")
+    df_processed_json=df_with_status.selectExpr(
+        "CAST(device_id AS STRING) AS key",
+        "to_json(struct(*)) AS value"
+    )
+    query_processed = df_processed_json.writeStream \
+        .format("kafka") \
+        .option("kafka.bootstrap.servers", "kafka1:19092,kafka2:19092,kafka3:19092") \
+        .option("topic", "iot-processed") \
+        .option("checkpointLocation", "/opt/spark/checkpoints/iot-processed-kafka") \
+        .outputMode("append") \
+        .start()
+    # On maintient la SparkSession active pour les 3 requêtes simultanées (MongoDB, iot-alerts, iot-processed)
     spark.streams.awaitAnyTermination()
 
 
