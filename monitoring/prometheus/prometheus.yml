@@ -1,19 +1,19 @@
 global:
-  scrape_interval: 15s     # Récolte les métriques toutes les 15 secondes
-  evaluation_interval: 15s # Évalue les règles d'alerte toutes les 15 secondes
+  scrape_interval: 15s
+  evaluation_interval: 15s
 
 scrape_configs:
-  # Job 1 : Métriques du système hôte (OS / VM)
+  # Job 1 : Métriques du serveur (Node Exporter)
   - job_name: 'node_exporter'
     static_configs:
       - targets: ['node-exporter:9100']
 
-  # Job 2 : Métriques des conteneurs Docker (CPU, RAM par conteneur)
-  - job_name: 'cadvisor'
-    static_configs:
-      - targets: ['cadvisor:8080']
-
-  # Job 3 : Métriques du cluster Kafka
+  # Job 2 : Métriques du cluster Kafka
   - job_name: 'kafka_exporter'
     static_configs:
       - targets: ['kafka-exporter:9308']
+
+  # Job 3 : Métriques des conteneurs Docker (Telegraf)
+  - job_name: 'telegraf'
+    static_configs:
+      - targets: ['telegraf:9273']
