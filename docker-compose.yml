@@ -410,28 +410,20 @@ services:
     networks:
       - azura-network
 
-  cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.49.1
-    container_name: cadvisor
+  telegraf:
+    image: telegraf:1.30.2
+    container_name: telegraf
     restart: always
-    privileged: true
-    devices:
-      - /dev/kmsg
-    command:
-      - --docker_only=true
-      - --housekeeping_interval=10s
+    user: root  # Nécessaire pour lire le socket Docker
     ports:
-      - "8085:8080"
+      - "9273:9273"
     volumes:
-      - /:/rootfs:ro
-      - /var/run:/var/run:ro
-      - /sys:/sys:ro
-      - /sys/fs/cgroup:/sys/fs/cgroup:ro
-      - /var/lib/docker/:/var/lib/docker:ro
-      - /dev/disk/:/dev/disk:ro
-      - /etc/machine-id:/etc/machine-id:ro
+      - ./monitoring/telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
       - azura-network
+
+
 
   kafka-exporter:
     image: danielqsj/kafka-exporter:v1.7.0
@@ -461,8 +453,8 @@ services:
       - prometheus_data:/prometheus
     depends_on:
       - node-exporter
-      - cadvisor
       - kafka-exporter
+      - telegraf
     networks:
       - azura-network
 
