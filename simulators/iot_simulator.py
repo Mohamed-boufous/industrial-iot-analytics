@@ -101,13 +101,21 @@ class IoTSimulator:
         
         # Evolution par marche aléatoire
         drift_val = random.uniform(-profile["drift"], profile["drift"])
-        # Bruit gaussien avec écart-type noise_std
         noise = random.gauss(0, profile["noise_std"])
         
         new_value = state["current_value"] + drift_val + noise
         
-        # Régulation : forcer le retour vers la plage normale si dérive excessive (sauf si en panne)
-        if sensor_id not in self.fault_scenarios:
+        # Vérifier si le capteur est actuellement en phase de panne active
+        is_in_active_fault = False
+        if sensor_id in self.fault_scenarios:
+            sc = self.fault_scenarios[sensor_id]
+            elapsed = time.time() - self.start_time
+            if sc["start_delay"] <= elapsed:
+                if not sc["is_temporary"] or elapsed <= sc["end_time"]:
+                    is_in_active_fault = True
+        
+        # Régulation : forcer le retour vers la plage normale si pas en panne active
+        if not is_in_active_fault:
             low, high = profile["normal_range"]
             if new_value < low:
                 new_value = low + abs(drift_val)
@@ -132,23 +140,19 @@ class IoTSimulator:
         state = self.states[sensor_id]
         profile = self.profiles[sensor_type]
         direction = scenario["direction"]
+        low, high = profile["normal_range"]
         
         # Phase 2 : Pendant la panne (entre start_delay et end_time) ➔ DÉRIVE ANORMALE
         if elapsed <= scenario["end_time"]:
-            # Augmentation/Diminution progressive par étape
-            increment = profile["drift"] * 1.8 * direction
+            increment = profile["drift"] * 2.5 * direction
             state["current_value"] = state["current_value"] + increment
             return round(state["current_value"], 2)
             
-        # Phase 3 : Après end_time pour les pannes TEMPORAIRES ➔ RETOUR PROGRESSIF À LA NORMALE
+        # Phase 3 : Après end_time pour les pannes TEMPORAIRES ➔ RETOUR IMMÉDIAT ET MAINTIEN À LA NORMALE
         if scenario["is_temporary"]:
-            low, high = profile["normal_range"]
             normal_target = (low + high) / 2.0
-            # On ramène doucement la valeur vers la normale
-            if state["current_value"] > normal_target:
-                state["current_value"] = max(normal_target, state["current_value"] - profile["drift"] * 2.0)
-            elif state["current_value"] < normal_target:
-                state["current_value"] = min(normal_target, state["current_value"] + profile["drift"] * 2.0)
+            if state["current_value"] > high or state["current_value"] < low:
+                state["current_value"] = normal_target
             return round(state["current_value"], 2)
             
         return round(state["current_value"], 2)
