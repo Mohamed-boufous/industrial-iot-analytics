@@ -71,17 +71,19 @@ MongoDB stocke **uniquement les donnees brutes** (telles qu'elles arrivent de Ka
 
 ---
 
-## Interfaces de Monitoring
+## Interfaces de Monitoring & Supervision
 
-Une fois le projet demarre, les interfaces suivantes sont accessibles :
+Une fois le projet démarré, les interfaces de supervision et d'administration suivantes sont accessibles :
 
 | Interface | URL | Description |
 |-----------|-----|-------------|
-| Kafka UI | http://localhost:8080 | Visualiser les topics, messages, consommateurs |
-| Mongo Express | http://localhost:8082 | Explorer la base `azura_iot` en temps reel |
-| Spark Master 1 UI | http://localhost:8081 | Statut du Master Spark actif |
-| Spark Master 2 UI | http://localhost:8083 | Statut du Master Spark standby |
-| Spark Driver UI | http://localhost:4040 | Suivi du job `stream_processor.py` en cours |
+| **Grafana** | http://localhost:3000 | Dashboards visuels (Santé de la VM, Conteneurs via Telegraf, Kafka) |
+| **Prometheus** | http://localhost:9090 | Collecte des métriques système et applicatives (PromQL) |
+| **Kafka UI** | http://localhost:8080 | Visualiser les topics, messages, consommateurs |
+| **Mongo Express** | http://localhost:8082 | Explorer la base `azura_iot` en temps réel |
+| **Spark Master 1 UI** | http://localhost:8081 | Statut du Master Spark actif |
+| **Spark Master 2 UI** | http://localhost:8083 | Statut du Master Spark standby |
+| **Spark Driver UI** | http://localhost:4040 | Suivi du job `stream_processor.py` en cours |
 
 ---
 
