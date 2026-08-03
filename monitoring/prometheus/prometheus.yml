@@ -17,3 +17,8 @@ scrape_configs:
   - job_name: 'telegraf'
     static_configs:
       - targets: ['telegraf:9273']
+
+  # Job 4 : Métriques du cluster MongoDB Sharded
+  - job_name: 'mongodb_exporter'
+    static_configs:
+      - targets: ['mongodb-exporter:9216']

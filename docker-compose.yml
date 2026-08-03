@@ -452,6 +452,20 @@ services:
     networks:
       - azura-network
 
+  mongodb-exporter:
+    image: percona/mongodb_exporter:0.40.0
+    container_name: mongodb-exporter
+    restart: always
+    command:
+      - --mongodb.uri=mongodb://mongos-router:27017
+      - --collect-all
+    ports:
+      - "9216:9216"
+    networks:
+      - azura-network
+    depends_on:
+      - mongos-router
+
   prometheus:
     image: prom/prometheus:v2.52.0
     container_name: prometheus
