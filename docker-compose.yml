@@ -467,6 +467,21 @@ services:
     depends_on:
       - mongos-router
 
+  mongodb-exporter-shard1:
+    image: percona/mongodb_exporter:0.40.0
+    container_name: mongodb-exporter-shard1
+    restart: always
+    command:
+      - --mongodb.uri=mongodb://mongo-shard1-1:27018/?directConnection=true
+      - --compatible-mode
+      - --collect-all
+    ports:
+      - "9217:9216"
+    networks:
+      - azura-network
+    depends_on:
+      - mongo-shard1-1
+
   prometheus:
     image: prom/prometheus:v2.52.0
     container_name: prometheus
