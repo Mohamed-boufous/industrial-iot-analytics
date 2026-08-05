@@ -40,7 +40,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "count(docker_container_status{container_name=~\"spark-master.*\", status=\"running\"})",
+          "expr": "count(docker_container_cpu_usage_percent{container_name=~\"spark-master.*\"})",
           "legendFormat": "Masters Running",
           "range": true,
           "refId": "A"
@@ -99,7 +99,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "count(docker_container_status{container_name=~\"spark-worker.*\", status=\"running\"})",
+          "expr": "count(docker_container_cpu_usage_percent{container_name=~\"spark-worker.*\"})",
           "legendFormat": "Workers Running",
           "range": true,
           "refId": "A"
@@ -157,7 +157,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "docker_container_status{container_name=\"spark-submit\", status=\"running\"}",
+          "expr": "count(docker_container_cpu_usage_percent{container_name=\"spark-submit\"})",
           "legendFormat": "Driver Active",
           "range": true,
           "refId": "A"
