@@ -128,7 +128,8 @@ services:
     image: mongo:7.0
     container_name: mongo-init
     depends_on:
-      - mongos-router
+      mongos-router:
+        condition: service_healthy
     command: >
       bash -c "
       echo 'Initialisation des Replica Sets MongoDB...' &&
@@ -225,13 +226,16 @@ services:
     image: confluentinc/cp-kafka:7.4.0
     container_name: kafka-init
     depends_on:
-      - kafka1
-      - kafka2
-      - kafka3
+      kafka1:
+        condition: service_healthy
+      kafka2:
+        condition: service_healthy
+      kafka3:
+        condition: service_healthy
     command: >
       bash -c "
       echo 'Waiting for Kafka to be ready...' &&
-      cub kafka-ready -b kafka1:19092 1 40 &&
+      cub kafka-ready -b kafka1:19092 3 60 &&
       kafka-topics --create --if-not-exists --bootstrap-server kafka1:19092 --partitions 6 --replication-factor 3 --topic iot-raw-data &&
       kafka-topics --create --if-not-exists --bootstrap-server kafka1:19092 --partitions 3 --replication-factor 2 --topic iot-processed &&
       kafka-topics --create --if-not-exists --bootstrap-server kafka1:19092 --partitions 2 --replication-factor 2 --topic iot-alerts &&
@@ -377,20 +381,21 @@ services:
     user: root
     restart: on-failure
     depends_on:
-      - zookeeper-1
-      - zookeeper-2
-      - zookeeper-3
-      - spark-master-1
-      - spark-master-2
-      - spark-worker-1
-      - spark-worker-2
+      spark-master-1:
+        condition: service_healthy
+      spark-master-2:
+        condition: service_healthy
+      spark-worker-1:
+        condition: service_started
+      spark-worker-2:
+        condition: service_started
     ports:
       - "4040:4040" # Spark Job UI (Driver)
     volumes:
       - ./spark/jobs:/opt/spark/jobs
       - spark_checkpoints:/opt/spark/checkpoints
     command: >
-      bash -c "echo 'Attente des Masters Spark...' && sleep 20 && spark-submit --master spark://spark-master-1:7077,spark-master-2:7077 --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1,org.mongodb.spark:mongo-spark-connector_2.12:10.3.0 /opt/spark/jobs/stream_processor.py"
+      bash -c "spark-submit --master spark://spark-master-1:7077,spark-master-2:7077 --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1,org.mongodb.spark:mongo-spark-connector_2.12:10.3.0 /opt/spark/jobs/stream_processor.py"
     networks:
       - azura-network
 
@@ -399,6 +404,16 @@ services:
     image: prom/node-exporter:v1.8.1
     container_name: node-exporter
     restart: always
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    pid: host
     ports:
       - "9100:9100"
     networks:
@@ -409,11 +424,16 @@ services:
     container_name: telegraf
     restart: always
     user: root  # Nécessaire pour lire le socket Docker
+    environment:
+      - HOST_PROC=/hostfs/proc
+      - HOST_SYS=/hostfs/sys
+      - HOST_MOUNT_PREFIX=/hostfs
     ports:
       - "9273:9273"
     volumes:
       - ./monitoring/telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /:/hostfs:ro
     networks:
       - azura-network
 
