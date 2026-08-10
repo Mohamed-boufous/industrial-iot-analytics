@@ -142,10 +142,14 @@ class IoTSimulator:
         direction = scenario["direction"]
         low, high = profile["normal_range"]
         
-        # Phase 2 : Pendant la panne (entre start_delay et end_time) ➔ DÉRIVE ANORMALE
+        # Phase 2 : Pendant la panne (entre start_delay et end_time) ➔ DÉRIVE ANORMALE AVEC PLAFONNEMENT
         if elapsed <= scenario["end_time"]:
             increment = profile["drift"] * 2.5 * direction
-            state["current_value"] = state["current_value"] + increment
+            new_val = state["current_value"] + increment
+            # La panne sature au lieu de diverger indéfiniment (plafonnement physique)
+            floor = profile.get("fault_floor", -50.0)
+            ceiling = profile.get("fault_ceiling", 500.0)
+            state["current_value"] = max(floor, min(ceiling, new_val))
             return round(state["current_value"], 2)
             
         # Phase 3 : Après end_time pour les pannes TEMPORAIRES ➔ RETOUR IMMÉDIAT ET MAINTIEN À LA NORMALE
