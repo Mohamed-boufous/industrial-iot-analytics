@@ -490,6 +490,8 @@ services:
       - "3000:3000"
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana:/var/lib/grafana/dashboards:ro
     depends_on:
       - prometheus
     networks:
