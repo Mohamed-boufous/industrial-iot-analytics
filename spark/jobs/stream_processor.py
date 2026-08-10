@@ -75,6 +75,7 @@ if __name__ == "__main__":
         .format("kafka") \
         .option("kafka.bootstrap.servers", "kafka1:19092,kafka2:19092,kafka3:19092") \
         .option("subscribe", "iot-raw-data") \
+        .option("kafka.group.id", "spark-azura-group") \
         .option("startingOffsets", "earliest") \
         .load()
         
