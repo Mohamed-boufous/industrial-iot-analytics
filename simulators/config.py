@@ -17,6 +17,8 @@ SENSOR_PROFILES = {
         "model": "TH-200X",
         "drift": 0.5,           # Dérive physique maximale par étape
         "noise_std": 0.15,      # Écart-type pour le bruit gaussien
+        "fault_floor": -20.0,   # Borne minimale physique lors d'une panne
+        "fault_ceiling": 150.0, # Borne maximale physique lors d'une panne (surchauffe)
     },
     "vibration": {
         "unit": "mm/s",
@@ -26,6 +28,8 @@ SENSOR_PROFILES = {
         "model": "VB-805",
         "drift": 0.2,
         "noise_std": 0.08,
+        "fault_floor": 0.0,
+        "fault_ceiling": 25.0,
     },
     "pression": {
         "unit": "bar",
@@ -35,6 +39,8 @@ SENSOR_PROFILES = {
         "model": "PR-3000",
         "drift": 0.3,
         "noise_std": 0.07,
+        "fault_floor": 0.0,
+        "fault_ceiling": 30.0,
     },
     "humidite": {
         "unit": "%",
@@ -44,6 +50,8 @@ SENSOR_PROFILES = {
         "model": "HM-40",
         "drift": 1.0,
         "noise_std": 0.25,
+        "fault_floor": 0.0,
+        "fault_ceiling": 100.0,
     },
     "consommation": {
         "unit": "kW",
@@ -53,6 +61,8 @@ SENSOR_PROFILES = {
         "model": "PM-5000",
         "drift": 15.0,
         "noise_std": 2.5,
+        "fault_floor": 0.0,
+        "fault_ceiling": 2000.0,
     },
 }
 
