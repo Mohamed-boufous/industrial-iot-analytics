@@ -1,11 +1,23 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from config import settings
+from services.kafka_consumer import kafka_service
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Gestionnaire de cycle de vie : démarre et arrête les services d'arrière-plan."""
+    # Action au DÉMARRAGE de FastAPI
+    kafka_service.start()
+    yield
+    # Action à l'ARRÊT de FastAPI
+    kafka_service.stop()
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
-    description="API FastAPI et WebSockets pour la plateforme de supervision IoT AzurA"
+    description="API FastAPI et WebSockets pour la plateforme de supervision IoT AzurA",
+    lifespan=lifespan
 )
 
 # Configuration CORS sécurisée pour autoriser uniquement le frontend React (localhost et IP de la VM)
