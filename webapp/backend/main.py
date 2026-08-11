@@ -3,6 +3,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from config import settings
 from services.kafka_consumer import kafka_service
+from routes_ws import alerts_ws, sensors_ws
+from routers import stats
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -28,6 +30,11 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+# Enregistrement des endpoints WebSockets & REST
+app.include_router(alerts_ws.router)
+app.include_router(sensors_ws.router)
+app.include_router(stats.router)
 
 @app.get("/")
 def root():
