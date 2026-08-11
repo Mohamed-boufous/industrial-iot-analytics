@@ -512,8 +512,24 @@ services:
       - grafana_data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./monitoring/grafana:/var/lib/grafana/dashboards:ro
+    networks:
+      - azura-network
+
+  # --- AZURA WEBAPP BACKEND (FASTAPI + WEBSOCKETS) ---
+  azura-api:
+    build: ./webapp/backend
+    container_name: azura-api
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - KAFKA_BROKERS=kafka1:19092,kafka2:19092,kafka3:19092
+      - MONGO_URI=mongodb://mongos-router:27017
     depends_on:
-      - prometheus
+      kafka1:
+        condition: service_healthy
+      mongos-router:
+        condition: service_healthy
     networks:
       - azura-network
 
