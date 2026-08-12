@@ -29,7 +29,7 @@ class MongoService:
         }
 
     def get_alerts_by_type(self) -> list[dict]:
-        """Retourne le nombre d'alertes groupées par type de statut (ex: CRITICAL_TEMP_HIGH)."""
+        """Retourne le nombre d'alertes groupées par type de statut depuis la collection alerts_history."""
         db = self._get_db()
         pipeline = [
             {"$match": {"status": {"$exists": True, "$ne": None, "$nin": ["NORMAL"]}}},
@@ -37,25 +37,10 @@ class MongoService:
             {"$sort": {"count": DESCENDING}}
         ]
         results = list(db[settings.COLLECTION_ALERTS].aggregate(pipeline))
-        
-        # Si la collection alerts_history est récente, agréger depuis raw si enrichi ou depuis les alertes en mémoire
-        if not results:
-            results = list(db[settings.COLLECTION_RAW].aggregate(pipeline))
-            
-        if not results:
-            # Fallback depuis les alertes temps réel du consommateur Kafka
-            from services.kafka_consumer import kafka_service
-            counts = {}
-            for alert in kafka_service.recent_alerts:
-                st = alert.get("status")
-                if st and st != "NORMAL":
-                    counts[st] = counts.get(st, 0) + 1
-            return [{"status": k, "count": v} for k, v in counts.items()]
-            
         return [{"status": r["_id"], "count": r["count"]} for r in results]
 
     def get_top_problematic_sensors(self, limit: int = 5) -> list[dict]:
-        """Retourne les capteurs ayant généré le plus d'alertes."""
+        """Retourne les capteurs ayant généré le plus d'alertes depuis la collection alerts_history."""
         db = self._get_db()
         pipeline = [
             {"$match": {"status": {"$exists": True, "$ne": None, "$nin": ["NORMAL"]}}},
@@ -69,27 +54,11 @@ class MongoService:
             {"$limit": limit}
         ]
         results = list(db[settings.COLLECTION_ALERTS].aggregate(pipeline))
-        if not results:
-            results = list(db[settings.COLLECTION_RAW].aggregate(pipeline))
-            
-        if not results:
-            # Agrégation depuis les capteurs actifs
-            docs = db[settings.COLLECTION_RAW].aggregate([
-                {"$group": {
-                    "_id": "$device_id",
-                    "device_type": {"$first": "$device_type"},
-                    "location": {"$first": "$location"},
-                    "alert_count": {"$sum": 1}
-                }},
-                {"$limit": limit}
-            ])
-            results = list(docs)
-
         return [
             {
                 "device_id": r["_id"],
-                "device_type": r.get("device_type", "Inconnu"),
-                "location": r.get("location", "Inconnu"),
+                "device_type": r.get("device_type", "INCONNU"),
+                "location": r.get("location", "AZURA_SITE"),
                 "alert_count": r["alert_count"]
             }
             for r in results
