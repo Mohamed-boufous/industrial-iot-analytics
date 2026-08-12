@@ -533,6 +533,19 @@ services:
     networks:
       - azura-network
 
+  # --- AZURA WEBAPP FRONTEND (REACT + NGINX) ---
+  azura-frontend:
+    build: ./webapp/frontend
+    container_name: azura-frontend
+    restart: always
+    ports:
+      - "5173:80"
+    depends_on:
+      - azura-api
+    networks:
+      - azura-network
+
+
 volumes:
   mongo_config_1_data:
   mongo_config_2_data:
