@@ -74,6 +74,14 @@ class KafkaConsumerService:
                     if len(self.recent_alerts) > 50:
                         self.recent_alerts.pop()
 
+                    # Persistance de l'alerte dans la collection MongoDB alerts_history
+                    try:
+                        from services.mongo_service import mongo_service
+                        db = mongo_service._get_db()
+                        db[settings.COLLECTION_ALERTS].insert_one(dict(payload))
+                    except Exception as err:
+                        print(f"[-] Erreur persistance alerte MongoDB: {err}")
+
                 # Dispatching du message à tous les abonnés WebSockets actifs
                 self._notify_listeners(topic, payload)
 
