@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
     ALERT_EMAIL_RECIPIENT: str = os.getenv("ALERT_EMAIL_RECIPIENT", "")
     
-    # Délai de confirmation d'une alerte continue avant envoi d'un email (en secondes)
-    ALERT_EMAIL_THRESHOLD_SECONDS: int = 60  # 1 minute
+    # Délai de confirmation d'une alerte continue avant envoi du rapport récapitulatif (en secondes)
+    ALERT_EMAIL_THRESHOLD_SECONDS: int = 120  # 2 minutes
 
 settings = Settings()

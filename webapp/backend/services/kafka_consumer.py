@@ -82,6 +82,13 @@ class KafkaConsumerService:
                     except Exception as err:
                         print(f"[-] Erreur persistance alerte MongoDB: {err}")
 
+                    # Transmission de l'alerte au service de notification par email (vérification des 60s)
+                    try:
+                        from services.email_service import email_service
+                        email_service.process_alert_event(payload)
+                    except Exception as err:
+                        print(f"[-] Erreur service email: {err}")
+
                 # Dispatching du message à tous les abonnés WebSockets actifs
                 self._notify_listeners(topic, payload)
 
