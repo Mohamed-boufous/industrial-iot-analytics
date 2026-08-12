@@ -121,24 +121,34 @@ class IoTSimulator:
                 new_value = low + abs(drift_val)
             elif new_value > high:
                 new_value = high - abs(drift_val)
+
+        # Plafonnement physique strict (fault_floor / fault_ceiling)
+        floor = profile.get("fault_floor", -20.0)
+        ceiling = profile.get("fault_ceiling", 150.0)
+        new_value = max(floor, min(ceiling, new_value))
             
         state["current_value"] = new_value
         return new_value
 
     def inject_anomaly(self, sensor_id: str, sensor_type: str, value: float) -> float:
         """Simule la dérive de panne en fonction du temps écoulé depuis le lancement."""
+        profile = self.profiles[sensor_type]
+        floor = profile.get("fault_floor", -20.0)
+        ceiling = profile.get("fault_ceiling", 150.0)
+
         if sensor_id not in self.fault_scenarios:
-            return round(value, 2)
+            clamped_val = max(floor, min(ceiling, value))
+            return round(clamped_val, 2)
             
         scenario = self.fault_scenarios[sensor_id]
         elapsed = time.time() - self.start_time
         
         # Phase 1 : Avant le déclenchement de la panne (0 à start_delay) ➔ NORMAL
         if elapsed < scenario["start_delay"]:
-            return round(value, 2)
+            clamped_val = max(floor, min(ceiling, value))
+            return round(clamped_val, 2)
             
         state = self.states[sensor_id]
-        profile = self.profiles[sensor_type]
         direction = scenario["direction"]
         low, high = profile["normal_range"]
         
@@ -146,9 +156,6 @@ class IoTSimulator:
         if elapsed <= scenario["end_time"]:
             increment = profile["drift"] * 2.5 * direction
             new_val = state["current_value"] + increment
-            # La panne sature au lieu de diverger indéfiniment (plafonnement physique)
-            floor = profile.get("fault_floor", -50.0)
-            ceiling = profile.get("fault_ceiling", 500.0)
             state["current_value"] = max(floor, min(ceiling, new_val))
             return round(state["current_value"], 2)
             
@@ -157,8 +164,10 @@ class IoTSimulator:
             normal_target = (low + high) / 2.0
             if state["current_value"] > high or state["current_value"] < low:
                 state["current_value"] = normal_target
+            state["current_value"] = max(floor, min(ceiling, state["current_value"]))
             return round(state["current_value"], 2)
             
+        state["current_value"] = max(floor, min(ceiling, state["current_value"]))
         return round(state["current_value"], 2)
 
 
