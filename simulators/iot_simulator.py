@@ -43,11 +43,12 @@ class IoTSimulator:
             print(f"[-] Kafka n'est pas disponible en local, mode standalone (print) activé. (Détail: {e})")
 
     def _setup_fault_scenarios(self):
-        """Configure le scénario temporel accéléré :
+        """Configure le scénario temporel exact :
         - 4 capteurs choisis au hasard parmi les 15.
-        - Pannes déclenchées aléatoirement entre 1 min (60s) et 2 min (120s).
-        - 2 pannes TEMPORAIRES : arrêtent de dériver et reviennent à la normale à t = 3 min (180s).
-        - 2 pannes PERMANENTES : continuent de dériver indéfiniment.
+        - t = 0s à 60s (0-1 min) : 0 alerte.
+        - t = 60s : Déclenchement simultané des 4 pannes (2 temporaires, 2 permanentes).
+        - t = 180s (3 min) : Guérison immédiate des 2 pannes temporaires.
+        - t > 180s : Seules les 2 pannes permanentes continuent d'émettre des alertes.
         """
         all_ids = [s["id"] for s in self.active_sensors]
         selected_fault_ids = random.sample(all_ids, 4)
@@ -56,23 +57,21 @@ class IoTSimulator:
         perm_fault_ids = selected_fault_ids[2:]   # 2 pannes permanentes
         
         for s_id in selected_fault_ids:
-            start_delay = random.uniform(60.0, 120.0)
             is_temporary = s_id in temp_fault_ids
-            
             self.fault_scenarios[s_id] = {
-                "start_delay": start_delay,
+                "start_delay": 60.0,                              # Déclenchement à t = 60s pile
                 "is_temporary": is_temporary,
-                "end_time": 180.0 if is_temporary else float('inf'), # Max 3 min (180s)
-                "direction": random.choice([1, -1])  # 1 = surchauffe/surpression, -1 = sous-pression/gel
+                "end_time": 180.0 if is_temporary else float('inf'), # Fin à t = 180s pour temporaires
+                "direction": random.choice([1, -1])              # 1 = surchauffe/surpression, -1 = sous-pression/gel
             }
         
-        print("\n" + "="*70)
-        print("  [SCÉNARIO TEMPOREL CONFIGURÉ (1 à 3 min)]")
-        print("  - t = 0s à 60s (0-1 min) : Tous les capteurs sont 100% NORMAUX")
+        print("\n" + "="*75)
+        print("  [SCÉNARIO TEMPOREL CONFIGURÉ (Strict 1 à 3 min)]")
+        print("  - t = 0s à 60s (0-1 min) : Tous les 15 capteurs sont 100% NORMAUX (0 alerte)")
         for s_id, sc in self.fault_scenarios.items():
-            kind = "TEMPORAIRE (résolue à t = 3 min)" if sc["is_temporary"] else "PERMANENTE (nécessite intervention)"
-            print(f"  - Capteur {s_id} : Panne {kind} déclenchée à t = {round(sc['start_delay'])}s")
-        print("="*70 + "\n")
+            kind = "TEMPORAIRE (guérie à t = 180s)" if sc["is_temporary"] else "PERMANENTE (active indéfiniment)"
+            print(f"  - Capteur {s_id} : Panne {kind} déclenchée à t = 60s")
+        print("="*75 + "\n")
 
     def _initialize_sensor_states(self):
         for sensor in self.active_sensors:
@@ -92,23 +91,23 @@ class IoTSimulator:
             }
 
     def generate_reading(self, sensor_id: str, sensor_type: str) -> float:
-        """Génère une lecture physique continue réaliste avec bruit gaussien."""
+        """Génère une lecture physique continue et gère le cycle de vie des pannes."""
         state = self.states[sensor_id]
         profile = self.profiles[sensor_type]
         low, high = profile["normal_range"]
-        
-        # Vérifier si le capteur est actuellement en phase de panne active
+        elapsed = time.time() - self.start_time
+
+        # Déterminer si le capteur est actuellement en phase de panne active
         is_in_active_fault = False
         if sensor_id in self.fault_scenarios:
             sc = self.fault_scenarios[sensor_id]
-            elapsed = time.time() - self.start_time
             if sc["start_delay"] <= elapsed:
                 if not sc["is_temporary"] or elapsed <= sc["end_time"]:
                     is_in_active_fault = True
 
-        # Si le capteur n'est PAS en panne active (ex: temporaire guérie après 180s, ou normal)
+        # ── CAS 1 : Capteur NORMAL (soit jamais en panne, soit panne temporaire guérie après 180s, soit avant 60s)
         if not is_in_active_fault:
-            # Réinitialisation forcée si la valeur était en surchauffe/anomalie
+            # Si la valeur était en panne/anomalie, la remettre immédiatement au centre de la plage normale
             if state["current_value"] < low or state["current_value"] > high:
                 state["current_value"] = (low + high) / 2.0
 
@@ -120,10 +119,19 @@ class IoTSimulator:
             new_value = max(low + 1.0, min(high - 1.0, new_value))
             state["current_value"] = new_value
             return round(new_value, 2)
+
+        # ── CAS 2 : Panne ACTIVE (entre 60s et 180s pour temporaire, ou > 60s pour permanente)
         else:
-            # Panne active : dérive progressive hors des bornes normales
             sc = self.fault_scenarios[sensor_id]
             direction = sc["direction"]
+            
+            # Si la panne vient tout juste d'être franchie, faire sauter immédiatement la valeur hors de la plage normale
+            if direction > 0 and state["current_value"] <= high:
+                state["current_value"] = high + 5.0
+            elif direction < 0 and state["current_value"] >= low:
+                state["current_value"] = low - 5.0
+
+            # Dérive continue accentuée
             increment = profile["drift"] * 2.5 * direction
             new_val = state["current_value"] + increment
             
