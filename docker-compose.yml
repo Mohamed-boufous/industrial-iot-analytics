@@ -128,8 +128,9 @@ services:
     image: mongo:7.0
     container_name: mongo-init
     depends_on:
-      mongos-router:
-        condition: service_healthy
+      - mongo-config-1
+      - mongo-shard1-1
+      - mongo-shard2-1
     command: >
       bash -c "
       echo 'Initialisation des Replica Sets MongoDB...' &&
