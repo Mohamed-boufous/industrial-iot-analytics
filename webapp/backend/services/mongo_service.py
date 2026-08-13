@@ -76,4 +76,10 @@ class MongoService:
         history.reverse() # Remet dans l'ordre chronologique
         return history
 
+    def get_recent_alerts(self, limit: int = 100) -> list[dict]:
+        """Retourne les alertes les plus récentes depuis la collection alerts_history."""
+        db = self._get_db()
+        docs = db[settings.COLLECTION_ALERTS].find({}, {"_id": 0}).sort("timestamp", DESCENDING).limit(limit)
+        return list(docs)
+
 mongo_service = MongoService()

@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,8 +9,11 @@ from routers import stats
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Gestionnaire de cycle de vie : démarre et arrête les services d'arrière-plan."""
-    print("[FastAPI Lifespan] Démarrage du KafkaConsumerService...")
+    """Gestionnaire de cycle de vie : configure la boucle asyncio et démarre KafkaConsumerService."""
+    print("[FastAPI Lifespan] Démarrage du KafkaConsumerService et initialisation des boucles WebSockets...")
+    loop = asyncio.get_running_loop()
+    alerts_ws.manager.set_loop(loop)
+    sensors_ws.manager.set_loop(loop)
     kafka_service.start()
     yield
     print("[FastAPI Lifespan] Arrêt du KafkaConsumerService...")
@@ -22,20 +26,10 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-@app.on_event("startup")
-def startup_event():
-    print("[FastAPI Startup Event] Vérification et démarrage de KafkaConsumerService...")
-    kafka_service.start()
-
-@app.on_event("shutdown")
-def shutdown_event():
-    print("[FastAPI Shutdown Event] Arrêt de KafkaConsumerService...")
-    kafka_service.stop()
-
 # Configuration CORS sécurisée pour autoriser uniquement le frontend React (localhost et IP de la VM)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,  # Liste des origines explicites et sécurisées
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],

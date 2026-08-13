@@ -35,3 +35,16 @@ def get_sensor_history(device_id: str, limit: int = Query(default=60, ge=10, le=
         return {"device_id": device_id, "count": len(history), "history": history}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur MongoDB: {str(e)}")
+
+@router.get("/recent-alerts")
+def get_recent_alerts(limit: int = Query(default=100, ge=1, le=500)):
+    """Retourne la liste des alertes récentes pour la réhydratation instantanée du dashboard."""
+    try:
+        from services.kafka_consumer import kafka_service
+        alerts = mongo_service.get_recent_alerts(limit=limit)
+        if not alerts:
+            alerts = kafka_service.recent_alerts
+        return {"count": len(alerts), "alerts": alerts}
+    except Exception as e:
+        from services.kafka_consumer import kafka_service
+        return {"count": len(kafka_service.recent_alerts), "alerts": kafka_service.recent_alerts}

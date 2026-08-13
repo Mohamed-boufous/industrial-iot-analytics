@@ -1,138 +1,232 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Broadcast, WarningOctagon, CheckCircle, Pulse } from "@phosphor-icons/react";
+import { WarningOctagon, CheckCircle, Pulse } from "@phosphor-icons/react";
 import { useWebSocket } from "../../hooks/useWebSocket";
 
+// Seuils nominaux et critiques conformes aux spécifications Spark (stream_processor.py)
+const SENSOR_THRESHOLDS = {
+  temperature:  { min: 5.0,   max: 80.0,  unit: "°C" },
+  vibration:    { min: 0.0,   max: 5.0,   unit: "mm/s" },
+  pression:     { min: 1.0,   max: 10.0,  unit: "bar" },
+  humidite:     { min: 30.0,  max: 70.0,  unit: "%" },
+  consommation: { min: 100.0, max: 500.0, unit: "kW" },
+};
+
+// Palette de 10 couleurs distinctes et haute visibilité
+const COLOR_PALETTE = [
+  "#ef4444", // Rouge Néon
+  "#f97316", // Orange Vif
+  "#a855f7", // Violet Électrique
+  "#06b6d4", // Cyan Vif
+  "#ec4899", // Rose Flash
+  "#eab308", // Jaune Ambre
+  "#10b981", // Vert Émeraude
+  "#3b82f6", // Bleu Royal
+  "#84cc16", // Vert Lime
+  "#6366f1", // Indigo
+];
+
 /**
- * Composant Graphique Temps Réel d'Analyse des Alertes IoT
- * 
- * Se connecte au WebSocket FastAPI (/ws/alerts) pour suivre le cycle de vie des pannes :
- * - t = 0s à 60s   : 0 alerte active (Lignes calmes).
- * - t = 60s à 180s : 4 courbes actives (2 pannes temporaires + 2 pannes permanentes).
- * - t > 180s       : 2 pannes temporaires guéries, seules les 2 pannes permanentes restent sur le chart !
+ * Calcule l'indice normalisé en % de la plage nominale (0% = min, 100% = max)
  */
+function normalizeToThresholdPercentage(value, deviceType) {
+  const t = SENSOR_THRESHOLDS[deviceType] || { min: 0, max: 100 };
+  const span = t.max - t.min;
+  if (span === 0) return 50;
+  return ((value - t.min) / span) * 100;
+}
+
+/**
+ * Génère une couleur unique et déterministe pour chaque capteur (device_id)
+ */
+function getSensorColor(deviceId) {
+  if (!deviceId) return COLOR_PALETTE[0];
+  let hash = 0;
+  for (let i = 0; i < deviceId.length; i++) {
+    hash = deviceId.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % COLOR_PALETTE.length;
+  return COLOR_PALETTE[index];
+}
+
 export function RealTimeAnalytics() {
-  const { messages, lastMessage, isConnected } = useWebSocket("/ws/alerts");
+  const { lastMessage, isConnected } = useWebSocket("/ws/alerts");
   
-  // Stockage glissant de la télémétrie des alertes par capteur { device_id: DataPoint[] }
+  // Dictionnaire des séries télémétriques par capteur
   const [sensorSeries, setSensorSeries] = useState({});
-  const [activeAlertsCount, setActiveAlertsCount] = useState(0);
-  const [hoveredPoint, setHoveredPoint] = useState(null);
+  // Horodatage réel courant pour l'axe X glissant (mise à jour chaque 1s)
+  const [currentTime, setCurrentTime] = useState(Date.now());
+  const [hoveredData, setHoveredData] = useState(null);
   const svgRef = useRef(null);
 
-  const maxPoints = 40;
-  const width = 850;
-  const height = 280;
-  const padding = { top: 25, right: 30, bottom: 40, left: 55 };
+  const width = 940;
+  const height = 340;
+  const padding = { top: 30, right: 40, bottom: 50, left: 75 };
 
-  // Palette de couleurs distinctes par capteur (Thème industriel monochrome & néon)
-  const sensorColors = {
-    temperature: { line: "#ef4444", gradient: "rgba(239, 68, 68, 0.2)" },  // Rouge critique
-    vibration:   { line: "#f97316", gradient: "rgba(249, 115, 22, 0.2)" },  // Orange critique
-    pression:    { line: "#a855f7", gradient: "rgba(168, 85, 247, 0.2)" },  // Violet critique
-    humidite:    { line: "#3b82f6", gradient: "rgba(59, 130, 246, 0.2)" },  // Bleu critique
-    consommation:{ line: "#eab308", gradient: "rgba(234, 179, 8, 0.2)" },  // Jaune critique
-  };
-
-  // Traitement des alertes reçues via WebSocket
+  // Horloge temps réel continue : fait avancer l'axe X chaque seconde
   useEffect(() => {
-    if (!lastMessage) return;
+    const timer = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
-    // Structure du message WebSocket: { type: "NEW_ALERT" | "INITIAL_ALERTS_HISTORY", data: ... }
-    let incomingAlerts = [];
-    if (lastMessage.type === "INITIAL_ALERTS_HISTORY" && Array.isArray(lastMessage.data)) {
-      incomingAlerts = lastMessage.data;
-    } else if (lastMessage.type === "NEW_ALERT" && lastMessage.data) {
-      incomingAlerts = [lastMessage.data];
-    }
-
-    if (incomingAlerts.length === 0) return;
+  // Fonction d'ajout et de synchronisation des points d'alertes
+  const processAlertsBatch = (alerts) => {
+    if (!Array.isArray(alerts) || alerts.length === 0) return;
 
     setSensorSeries((prev) => {
       const updated = { ...prev };
       const now = Date.now();
 
-      incomingAlerts.forEach((alert) => {
+      alerts.forEach((alert) => {
         const devId = alert.device_id;
+        if (!devId) return;
+
         const val = typeof alert.value === "number" ? alert.value : 0;
         const devType = alert.device_type || "temperature";
-        const status = alert.status || "UNKNOWN";
+        const status = alert.status || "ANOMALY";
+        const unit = alert.unit || (SENSOR_THRESHOLDS[devType] ? SENSOR_THRESHOLDS[devType].unit : "");
+        const location = alert.location || "AzurA Site";
+
+        // Calcul de la valeur normalisée en % de la plage critique
+        const normPercent = normalizeToThresholdPercentage(val, devType);
+
+        // Conversion horodatage
+        const timeMs = alert.timestamp ? new Date(alert.timestamp).getTime() : now;
 
         if (!updated[devId]) {
           updated[devId] = {
             device_id: devId,
             device_type: devType,
-            location: alert.location || "Zone Industrielle",
-            unit: alert.unit || "",
+            location: location,
+            unit: unit,
             points: [],
-            lastUpdated: now,
-            status: status
+            lastUpdated: timeMs,
+            status: status,
+            color: getSensorColor(devId)
           };
         }
 
-        const points = updated[devId].points;
-        points.push({ time: now, value: val, status: status });
-        
-        // Conserve un historique glissant des maxPoints derniers points
-        updated[devId].points = points.slice(-maxPoints);
-        updated[devId].lastUpdated = now;
-        updated[devId].status = status;
+        const pts = updated[devId].points;
+        // Évite les doublons stricts sur la même seconde
+        const exists = pts.some(p => Math.abs(p.time - timeMs) < 600);
+        if (!exists) {
+          pts.push({
+            time: timeMs,
+            value: val,
+            normPercent: normPercent,
+            status: status,
+            deviceId: devId,
+            deviceType: devType,
+            unit: unit,
+            location: location,
+            color: updated[devId].color
+          });
+
+          // Trie par ordre chronologique et conserve les 60 derniers points
+          pts.sort((a, b) => a.time - b.time);
+          updated[devId].points = pts.slice(-60);
+          updated[devId].lastUpdated = Math.max(updated[devId].lastUpdated, timeMs);
+          updated[devId].status = status;
+        }
       });
 
       return updated;
     });
-  }, [lastMessage]);
+  };
 
-  // Nettoyage automatique des capteurs dont la dernière alerte date de plus de 15 secondes (Guérison temporaire)
+  // Synchronisation continue (Polling toutes les 3s pour garantir la persistance des données)
+  const syncLatestAlerts = () => {
+    fetch("/api/stats/recent-alerts")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data && Array.isArray(data.alerts)) {
+          processAlertsBatch(data.alerts);
+        }
+      })
+      .catch((err) => console.error("[-] Sync error:", err));
+  };
+
   useEffect(() => {
-    const interval = setInterval(() => {
-      const now = Date.now();
-      setSensorSeries((prev) => {
-        const nextState = {};
-        let activeCount = 0;
-
-        Object.keys(prev).forEach((devId) => {
-          const series = prev[devId];
-          // Si le capteur a émis une alerte dans les 15 dernières secondes, il est toujours en alerte active
-          if (now - series.lastUpdated < 15000) {
-            nextState[devId] = series;
-            activeCount++;
-          }
-        });
-
-        setActiveAlertsCount(activeCount);
-        return nextState;
-      });
-    }, 2000);
-
+    syncLatestAlerts();
+    const interval = setInterval(syncLatestAlerts, 3000);
     return () => clearInterval(interval);
   }, []);
 
-  // Calcul des échelles X et Y pour le SVG
-  const allPoints = Object.values(sensorSeries).flatMap((s) => s.points);
-  
-  const minTime = allPoints.length > 0 ? Math.min(...allPoints.map((p) => p.time)) : Date.now() - 60000;
-  const maxTime = allPoints.length > 0 ? Math.max(...allPoints.map((p) => p.time)) : Date.now();
-  const timeRange = Math.max(maxTime - minTime, 1000);
+  // Réception en direct par WebSockets (sub-seconde)
+  useEffect(() => {
+    if (!lastMessage) return;
+
+    if (lastMessage.type === "INITIAL_ALERTS_HISTORY" && Array.isArray(lastMessage.data)) {
+      processAlertsBatch(lastMessage.data);
+    } else if (lastMessage.type === "NEW_ALERT" && lastMessage.data) {
+      processAlertsBatch([lastMessage.data]);
+    }
+  }, [lastMessage]);
+
+  // Fenêtre glissante de temps réel : 2 minutes visibles à l'écran
+  const windowDurationMs = 120000;
+  const minTime = currentTime - windowDurationMs;
+  const maxTime = currentTime + 4000;
+  const timeRange = maxTime - minTime;
+
+  // Capteurs actifs ayant émis une alerte dans les 60 dernières secondes
+  const activeSensors = Object.values(sensorSeries).filter((s) => {
+    return s.points.some((p) => p.time >= currentTime - 60000);
+  });
+  const activeCount = activeSensors.length;
 
   const getX = (time) => {
     return padding.left + ((time - minTime) / timeRange) * (width - padding.left - padding.right);
   };
 
-  // Normalisation générique de Y (0 à 100%)
-  const getY = (value, type) => {
-    let minVal = 0;
-    let maxVal = 100;
-    if (type === "temperature") { minVal = 0; maxVal = 120; }
-    if (type === "vibration")   { minVal = 0; maxVal = 12; }
-    if (type === "pression")    { minVal = 0; maxVal = 20; }
-    if (type === "consommation"){ minVal = 0; maxVal = 800; }
-    if (type === "humidite")    { minVal = 0; maxVal = 100; }
-
-    const norm = Math.max(0, Math.min(1, (value - minVal) / (maxVal - minVal || 1)));
-    return padding.top + (1 - norm) * (height - padding.top - padding.bottom);
+  // Échelle Y normalisée : de -25% (sous-seuil critique) à +140% (sur-seuil critique)
+  const yMinNorm = -25;
+  const yMaxNorm = 140;
+  const getY = (normVal) => {
+    const clamped = Math.max(yMinNorm, Math.min(yMaxNorm, normVal));
+    const ratio = (clamped - yMinNorm) / (yMaxNorm - yMinNorm);
+    return padding.top + (1 - ratio) * (height - padding.top - padding.bottom);
   };
 
-  const activeSensorsList = Object.values(sensorSeries);
+  // Horodatages gradués sur l'Axe X (HH:mm:ss rafraîchis en continu chaque seconde)
+  const timeTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+    const t = minTime + ratio * (maxTime - minTime);
+    const timeStr = new Date(t).toLocaleTimeString('fr-FR', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    return { time: t, label: timeStr, x: getX(t) };
+  });
+
+  // Graduations de l'Axe Y Normalisé
+  const yTicks = [
+    { val: 140, label: "+140%", type: "danger" },
+    { val: 100, label: "100% [MAX]", type: "threshold_high" },
+    { val: 50,  label: "50% [NOMINAL]", type: "nominal" },
+    { val: 0,   label: "0% [MIN]", type: "threshold_low" },
+    { val: -25, label: "-25%", type: "danger" },
+  ];
+
+  // Points visibles pour l'infobulle interactif
+  const visiblePoints = activeSensors.flatMap((s) => s.points.filter((p) => p.time >= minTime - 5000 && p.time <= maxTime + 5000));
+
+  const handleMouseMove = (e) => {
+    if (!svgRef.current || visiblePoints.length === 0) return;
+    const rect = svgRef.current.getBoundingClientRect();
+    const mouseX = ((e.clientX - rect.left) / rect.width) * width;
+
+    let closestPoint = null;
+    let minDist = Infinity;
+
+    visiblePoints.forEach((pt) => {
+      const px = getX(pt.time);
+      const dist = Math.abs(px - mouseX);
+      if (dist < minDist && dist < 45) {
+        minDist = dist;
+        closestPoint = pt;
+      }
+    });
+
+    setHoveredData(closestPoint);
+  };
 
   return (
     <div style={{
@@ -140,25 +234,24 @@ export function RealTimeAnalytics() {
       border: "1px solid var(--azura-border)",
       borderRadius: "16px",
       padding: "24px",
-      boxShadow: "0 10px 30px rgba(0,0,0,0.1)",
-      marginBottom: "24px"
+      boxShadow: "0 10px 30px rgba(0,0,0,0.06)"
     }}>
-      {/* Entête du Composant Graphique */}
+      {/* Entête de Supervision */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
         <div>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
-            <Pulse size={24} weight="bold" style={{ color: "var(--azura-text)" }} />
-            <h2 style={{ fontSize: "1.25rem", fontWeight: "700", color: "var(--azura-text)", margin: 0 }}>
-              Analyse Temps Réel des Flux d'Alertes
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <Pulse size={28} weight="bold" style={{ color: "var(--azura-accent-red)" }} />
+            <h2 style={{ fontSize: "1.35rem", fontWeight: 800, color: "var(--azura-text)", margin: 0 }}>
+              Analyse Temps Réel des Flux d'Alertes (Échelle Normalisée)
             </h2>
           </div>
-          <p style={{ color: "var(--azura-text-muted)", fontSize: "0.875rem", margin: 0 }}>
-            Visualisation directe des alertes Kafka reçues via WebSockets.
+          <p style={{ color: "var(--azura-text-muted)", fontSize: "0.875rem", marginTop: "4px", margin: 0 }}>
+            Normalisation unifiée en <strong>% de la plage nominale (0% = seuil bas, 100% = seuil haut)</strong> — Topic: <code>iot-alerts</code>
           </p>
         </div>
 
-        {/* Badge de Connexion Live WebSocket & Compteur d'Alertes Actives */}
-        <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          {/* Statut Live */}
           <div style={{
             display: "flex",
             alignItems: "center",
@@ -166,7 +259,7 @@ export function RealTimeAnalytics() {
             padding: "8px 16px",
             backgroundColor: isConnected ? "rgba(34, 197, 94, 0.1)" : "rgba(239, 68, 68, 0.1)",
             border: `1px solid ${isConnected ? "rgba(34, 197, 94, 0.3)" : "rgba(239, 68, 68, 0.3)"}`,
-            borderRadius: "12px"
+            borderRadius: "20px"
           }}>
             <div style={{
               width: "8px",
@@ -175,204 +268,316 @@ export function RealTimeAnalytics() {
               backgroundColor: isConnected ? "#22c55e" : "#ef4444",
               boxShadow: isConnected ? "0 0 10px #22c55e" : "none"
             }} />
-            <span style={{ color: isConnected ? "#22c55e" : "#ef4444", fontSize: "0.85rem", fontWeight: "600" }}>
-              {isConnected ? "WebSocket Live" : "Déconnecté"}
+            <span style={{ color: isConnected ? "#22c55e" : "#ef4444", fontSize: "0.85rem", fontWeight: "700" }}>
+              {isConnected ? "WebSocket Live" : "Mode Synchro"}
             </span>
           </div>
 
+          {/* Compteur d'Alertes Actives */}
           <div style={{
-            padding: "8px 16px",
-            backgroundColor: activeAlertsCount > 0 ? "rgba(239, 68, 68, 0.1)" : "rgba(34, 197, 94, 0.1)",
-            border: `1px solid ${activeAlertsCount > 0 ? "rgba(239, 68, 68, 0.3)" : "rgba(34, 197, 94, 0.3)"}`,
-            borderRadius: "12px",
+            padding: "8px 18px",
+            backgroundColor: activeCount > 0 ? "rgba(239, 68, 68, 0.1)" : "rgba(34, 197, 94, 0.1)",
+            border: `1px solid ${activeCount > 0 ? "rgba(239, 68, 68, 0.3)" : "rgba(34, 197, 94, 0.3)"}`,
+            borderRadius: "20px",
             display: "flex",
             alignItems: "center",
             gap: "8px"
           }}>
-            {activeAlertsCount > 0 ? (
-              <WarningOctagon size={18} weight="fill" style={{ color: "#ef4444" }} />
+            {activeCount > 0 ? (
+              <WarningOctagon size={20} weight="fill" style={{ color: "#ef4444" }} />
             ) : (
-              <CheckCircle size={18} weight="fill" style={{ color: "#22c55e" }} />
+              <CheckCircle size={20} weight="fill" style={{ color: "#22c55e" }} />
             )}
-            <span style={{ fontSize: "0.875rem", fontWeight: "700", color: "var(--azura-text)" }}>
-              {activeAlertsCount} {activeAlertsCount === 1 ? "Capteur en Alerte" : "Capteurs en Alerte"}
+            <span style={{ fontSize: "0.9rem", fontWeight: "800", color: activeCount > 0 ? "#ef4444" : "#22c55e" }}>
+              {activeCount} {activeCount === 1 ? "Capteur en Alerte Active" : "Capteurs en Alerte Active"}
             </span>
           </div>
         </div>
       </div>
 
-      {/* Zone SVG d'affichage des Courbes Dynamiques */}
-      <div style={{ position: "relative", backgroundColor: "rgba(0,0,0,0.03)", borderRadius: "12px", padding: "12px" }}>
+      {/* Surface Graphique SVG */}
+      <div style={{ position: "relative", backgroundColor: "rgba(0,0,0,0.02)", borderRadius: "12px", padding: "16px 12px" }}>
         <svg
           ref={svgRef}
           width="100%"
           height={height}
           viewBox={`0 0 ${width} ${height}`}
-          style={{ overflow: "visible" }}
+          onMouseMove={handleMouseMove}
+          onMouseLeave={() => setHoveredData(null)}
+          style={{ overflow: "visible", cursor: "crosshair" }}
         >
-          {/* Grille d'arrière-plan */}
-          {[0, 25, 50, 75, 100].map((val) => {
-            const yPos = padding.top + (1 - val / 100) * (height - padding.top - padding.bottom);
+          {/* Zone Nominale de Sécurité (Ombrage vert discret entre 0% et 100%) */}
+          <rect
+            x={padding.left}
+            y={getY(100)}
+            width={width - padding.left - padding.right}
+            height={getY(0) - getY(100)}
+            fill="rgba(34, 197, 94, 0.04)"
+            stroke="none"
+          />
+
+          {/* Lignes de Seuils et Graduations de l'Axe Y Normalisé */}
+          {yTicks.map((tick, i) => {
+            const yPos = getY(tick.val);
+            const isThreshold = tick.val === 100 || tick.val === 0;
+            const strokeColor = isThreshold ? "#ef4444" : "var(--azura-border)";
+            const strokeDash = isThreshold ? "6 4" : "4 4";
+            const strokeWidth = isThreshold ? "1.5" : "1";
+            const opacity = isThreshold ? "0.8" : "0.3";
+
             return (
-              <g key={val}>
+              <g key={i}>
                 <line
                   x1={padding.left}
                   y1={yPos}
                   x2={width - padding.right}
                   y2={yPos}
-                  stroke="var(--azura-border)"
-                  strokeDasharray="4 4"
-                  opacity="0.5"
+                  stroke={strokeColor}
+                  strokeDasharray={strokeDash}
+                  strokeWidth={strokeWidth}
+                  opacity={opacity}
                 />
                 <text
                   x={padding.left - 10}
-                  y={yPos}
-                  fill="var(--azura-text-muted)"
+                  y={yPos + 4}
+                  fill={isThreshold ? "#ef4444" : "var(--azura-text-muted)"}
                   fontSize="11"
+                  fontWeight={isThreshold ? "800" : "600"}
                   textAnchor="end"
-                  dominantBaseline="middle"
+                  fontFamily="monospace"
                 >
-                  {val}%
+                  {tick.label}
                 </text>
               </g>
             );
           })}
 
-          {/* Tracer des lignes pour chaque capteur actif en alerte */}
-          {activeSensorsList.length === 0 ? (
-            <text
-              x={width / 2}
-              y={height / 2}
-              fill="var(--azura-text-muted)"
-              fontSize="14"
-              textAnchor="middle"
-              fontWeight="500"
-            >
-              🟢 Aucun capteur en anomalie (Système AzurA 100% Nominal)
-            </text>
+          {/* Axe X des Abscisses : Horodatages Temps Réel Continu (HH:mm:ss) */}
+          {timeTicks.map((tick, idx) => (
+            <g key={idx}>
+              <line
+                x1={tick.x}
+                y1={height - padding.bottom}
+                x2={tick.x}
+                y2={height - padding.bottom + 6}
+                stroke="var(--azura-border)"
+                strokeWidth="1.5"
+              />
+              <text
+                x={tick.x}
+                y={height - padding.bottom + 22}
+                fill="var(--azura-text-muted)"
+                fontSize="11"
+                fontWeight="600"
+                textAnchor="middle"
+                fontFamily="monospace"
+              >
+                {tick.label}
+              </text>
+            </g>
+          ))}
+
+          {/* Ligne de base Axe X */}
+          <line
+            x1={padding.left}
+            y1={height - padding.bottom}
+            x2={width - padding.right}
+            y2={height - padding.bottom}
+            stroke="var(--azura-border)"
+            strokeWidth="1.5"
+          />
+
+          {/* Tracé des courbes dynamiques normalisées par capteur */}
+          {activeCount === 0 ? (
+            <g>
+              <circle cx={width / 2 - 180} cy={height / 2 - 10} r="7" fill="#22c55e" />
+              <text
+                x={width / 2}
+                y={height / 2 - 5}
+                fill="var(--azura-text-muted)"
+                fontSize="14"
+                fontWeight="700"
+                textAnchor="middle"
+              >
+                🟢 Aucun capteur en anomalie (Système AzurA 100% Nominal)
+              </text>
+            </g>
           ) : (
-            activeSensorsList.map((series) => {
-              const points = series.points;
-              if (points.length < 2) return null;
+            activeSensors.map((series) => {
+              const pts = series.points.filter((p) => p.time >= minTime - 10000 && p.time <= maxTime + 5000);
+              if (pts.length === 0) return null;
 
-              const styleConfig = sensorColors[series.device_type] || { line: "#a855f7", gradient: "rgba(168,85,247,0.2)" };
+              const strokeColor = series.color;
 
-              const dPath = points
+              // Tracé SVG utilisant la valeur normalisée normPercent
+              const dPath = pts
                 .map((pt, i) => {
                   const x = getX(pt.time);
-                  const y = getY(pt.value, series.device_type);
+                  const y = getY(pt.normPercent);
                   return `${i === 0 ? "M" : "L"} ${x},${y}`;
                 })
                 .join(" ");
 
-              const lastPoint = points[points.length - 1];
-              const lastX = getX(lastPoint.time);
-              const lastY = getY(lastPoint.value, series.device_type);
+              const lastPt = pts[pts.length - 1];
+              const lastX = getX(lastPt.time);
+              const lastY = getY(lastPt.normPercent);
 
               return (
                 <g key={series.device_id}>
-                  {/* Ligne de tendance de l'alerte */}
+                  {/* Courbe Néon Normalisée */}
                   <path
                     d={dPath}
                     fill="none"
-                    stroke={styleConfig.line}
-                    strokeWidth="3"
+                    stroke={strokeColor}
+                    strokeWidth="3.5"
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     style={{
-                      filter: `drop-shadow(0 0 6px ${styleConfig.line})`,
-                      transition: "all 0.3s ease"
+                      filter: `drop-shadow(0 0 6px ${strokeColor})`,
+                      transition: "all 0.1s linear"
                     }}
                   />
 
-                  {/* Point le plus récent pulsant en direct */}
+                  {/* Tête de courbe en direct */}
                   <circle
                     cx={lastX}
                     cy={lastY}
                     r="6"
-                    fill={styleConfig.line}
-                    style={{
-                      filter: `drop-shadow(0 0 8px ${styleConfig.line})`
-                    }}
+                    fill={strokeColor}
+                    style={{ filter: `drop-shadow(0 0 8px ${strokeColor})` }}
                   />
-
-                  {/* Étiquette d'identifiant du capteur sur la courbe */}
-                  <text
-                    x={lastX + 10}
-                    y={lastY + 4}
-                    fill={styleConfig.line}
-                    fontSize="11"
-                    fontWeight="700"
-                  >
-                    {series.device_id} ({lastPoint.value} {series.unit})
-                  </text>
                 </g>
               );
             })
           )}
+
+          {/* Réticule de Survol (Hover Crosshair) */}
+          {hoveredData && (
+            <g style={{ pointerEvents: "none" }}>
+              <line
+                x1={getX(hoveredData.time)}
+                y1={padding.top}
+                x2={getX(hoveredData.time)}
+                y2={height - padding.bottom}
+                stroke={hoveredData.color}
+                strokeDasharray="4 4"
+                strokeWidth="1.5"
+                opacity="0.8"
+              />
+              <circle
+                cx={getX(hoveredData.time)}
+                cy={getY(hoveredData.normPercent)}
+                r="7"
+                fill="none"
+                stroke={hoveredData.color}
+                strokeWidth="2.5"
+              />
+            </g>
+          )}
         </svg>
+
+        {/* Infobulle de Survol (Hover Tooltip avec Valeur Réelle + % de Seuil) */}
+        {hoveredData && (
+          <div
+            style={{
+              position: "absolute",
+              left: `${Math.max(100, Math.min(width - 180, getX(hoveredData.time)))}px`,
+              top: `${Math.max(20, getY(hoveredData.normPercent) - 80)}px`,
+              transform: "translateX(-50%)",
+              backgroundColor: "var(--azura-card-bg)",
+              border: `1.5px solid ${hoveredData.color}`,
+              borderRadius: "10px",
+              padding: "10px 14px",
+              boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
+              pointerEvents: "none",
+              zIndex: 20
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
+              <div style={{ width: "10px", height: "10px", borderRadius: "50%", backgroundColor: hoveredData.color }} />
+              <span style={{ fontWeight: 800, color: "var(--azura-text)", fontSize: "0.9rem" }}>
+                {hoveredData.deviceId}
+              </span>
+            </div>
+            <div style={{ color: hoveredData.color, fontSize: "1.15rem", fontWeight: 800 }}>
+              {hoveredData.value} {hoveredData.unit}
+            </div>
+            <div style={{
+              fontSize: "0.75rem",
+              fontWeight: 800,
+              color: hoveredData.normPercent > 100 || hoveredData.normPercent < 0 ? "#ef4444" : "#22c55e",
+              marginTop: "2px"
+            }}>
+              📊 Indice Seuil: {hoveredData.normPercent.toFixed(1)}% {hoveredData.normPercent > 100 ? "(Surchauffe/Surpression)" : hoveredData.normPercent < 0 ? "(Sous-seuil critique)" : "(Nominal)"}
+            </div>
+            <div style={{ color: "var(--azura-text-muted)", fontSize: "0.75rem", fontFamily: "monospace", marginTop: "2px" }}>
+              🕒 {new Date(hoveredData.time).toLocaleTimeString()}
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Légende et Cartes Récapitulatives des Capteurs en Alerte */}
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-        gap: "12px",
-        marginTop: "20px"
-      }}>
-        {activeSensorsList.length === 0 ? (
-          <div style={{
-            gridColumn: "1 / -1",
-            padding: "16px",
-            backgroundColor: "rgba(34, 197, 94, 0.05)",
-            border: "1px dashed rgba(34, 197, 94, 0.3)",
-            borderRadius: "12px",
-            textAlign: "center",
-            color: "var(--azura-text-muted)",
-            fontSize: "0.875rem"
-          }}>
-            En attente de la première minute de surveillance (t = 60s)... Aucune alerte enregistrée.
-          </div>
-        ) : (
-          activeSensorsList.map((series) => {
-            const styleConfig = sensorColors[series.device_type] || { line: "#a855f7" };
-            const lastPoint = series.points[series.points.length - 1];
+      {/* Cartes Légendes Dynamiques */}
+      {activeCount > 0 && (
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
+          gap: "12px",
+          marginTop: "20px"
+        }}>
+          {activeSensors.map((series) => {
+            const lastPt = series.points[series.points.length - 1];
 
             return (
               <div
                 key={series.device_id}
                 style={{
                   backgroundColor: "var(--azura-card-bg)",
-                  border: `1px solid ${styleConfig.line}`,
+                  borderLeft: `5px solid ${series.color}`,
+                  borderTop: "1px solid var(--azura-border)",
+                  borderRight: "1px solid var(--azura-border)",
+                  borderBottom: "1px solid var(--azura-border)",
                   borderRadius: "12px",
                   padding: "12px 16px",
-                  boxShadow: `0 4px 15px rgba(0,0,0,0.05)`
+                  boxShadow: "0 4px 12px rgba(0,0,0,0.04)"
                 }}
               >
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
-                  <span style={{ fontSize: "0.75rem", fontWeight: "700", color: styleConfig.line, textTransform: "uppercase" }}>
+                  <span style={{ fontSize: "0.75rem", fontWeight: 800, color: series.color, textTransform: "uppercase" }}>
                     {series.device_type}
                   </span>
                   <span style={{ fontSize: "0.75rem", color: "var(--azura-text-muted)" }}>
                     {series.location}
                   </span>
                 </div>
-                <div style={{ fontSize: "1rem", fontWeight: "700", color: "var(--azura-text)" }}>
+                <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "var(--azura-text)" }}>
                   {series.device_id}
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginTop: "8px" }}>
-                  <span style={{ fontSize: "1.25rem", fontWeight: "800", color: styleConfig.line }}>
-                    {lastPoint ? lastPoint.value : 0} {series.unit}
-                  </span>
-                  <span style={{ fontSize: "0.75rem", fontWeight: "600", color: "#ef4444" }}>
+                  <div>
+                    <span style={{ fontSize: "1.2rem", fontWeight: 800, color: series.color }}>
+                      {lastPt ? lastPt.value : 0} {series.unit}
+                    </span>
+                    <span style={{ fontSize: "0.75rem", color: "var(--azura-text-muted)", marginLeft: "6px" }}>
+                      ({lastPt ? lastPt.normPercent.toFixed(0) : 0}%)
+                    </span>
+                  </div>
+                  <span style={{
+                    fontSize: "0.75rem",
+                    fontWeight: 800,
+                    color: "#ef4444",
+                    backgroundColor: "rgba(239,68,68,0.1)",
+                    padding: "3px 8px",
+                    borderRadius: "6px"
+                  }}>
                     {series.status}
                   </span>
                 </div>
               </div>
             );
-          })
-        )}
-      </div>
+          })}
+        </div>
+      )}
     </div>
   );
 }
