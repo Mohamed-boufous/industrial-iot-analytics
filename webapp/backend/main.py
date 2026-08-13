@@ -9,10 +9,10 @@ from routers import stats
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Gestionnaire de cycle de vie : démarre et arrête les services d'arrière-plan."""
-    # Action au DÉMARRAGE de FastAPI
+    print("[FastAPI Lifespan] Démarrage du KafkaConsumerService...")
     kafka_service.start()
     yield
-    # Action à l'ARRÊT de FastAPI
+    print("[FastAPI Lifespan] Arrêt du KafkaConsumerService...")
     kafka_service.stop()
 
 app = FastAPI(
@@ -21,6 +21,16 @@ app = FastAPI(
     description="API FastAPI et WebSockets pour la plateforme de supervision IoT AzurA",
     lifespan=lifespan
 )
+
+@app.on_event("startup")
+def startup_event():
+    print("[FastAPI Startup Event] Vérification et démarrage de KafkaConsumerService...")
+    kafka_service.start()
+
+@app.on_event("shutdown")
+def shutdown_event():
+    print("[FastAPI Shutdown Event] Arrêt de KafkaConsumerService...")
+    kafka_service.stop()
 
 # Configuration CORS sécurisée pour autoriser uniquement le frontend React (localhost et IP de la VM)
 app.add_middleware(
@@ -50,7 +60,8 @@ def health_check():
     return {
         "status": "healthy",
         "kafka_brokers": settings.KAFKA_BROKERS,
-        "mongo_uri": settings.MONGO_URI
+        "mongo_uri": settings.MONGO_URI,
+        "kafka_consumer_running": kafka_service.running
     }
 
 if __name__ == "__main__":

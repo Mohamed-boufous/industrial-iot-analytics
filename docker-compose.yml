@@ -531,6 +531,8 @@ services:
         condition: service_healthy
       mongos-router:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     networks:
       - azura-network
 

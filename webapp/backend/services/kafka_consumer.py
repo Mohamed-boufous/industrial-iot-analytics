@@ -21,7 +21,7 @@ class KafkaConsumerService:
         conf = {
             'bootstrap.servers': settings.KAFKA_BROKERS,
             'group.id': settings.KAFKA_GROUP_ID_WEBAPP,
-            'auto.offset.reset': 'latest', # Consomme uniquement les messages frais en temps réel
+            'auto.offset.reset': 'earliest', # Lit depuis le début pour ne rater aucune alerte (temporaire ou permanente)
             'enable.auto.commit': True
         }
         return Consumer(conf)
@@ -57,6 +57,9 @@ class KafkaConsumerService:
                 if msg.error():
                     if msg.error().code() != KafkaError._PARTITION_EOF:
                         print(f"[-] Erreur Kafka Consumer: {msg.error()}")
+                        if msg.error().code() == KafkaError.UNKNOWN_TOPIC_OR_PART:
+                            time.sleep(2.0)
+                            consumer = None
                     continue
 
                 # Décodage du message JSON
