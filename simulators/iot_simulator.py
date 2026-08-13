@@ -45,7 +45,7 @@ class IoTSimulator:
     def _setup_fault_scenarios(self):
         """Configure le scénario temporel exact :
         - 4 capteurs choisis au hasard parmi les 15.
-        - t = 0s à 60s (0-1 min) : 0 alerte.
+        - t = 0s à 60s (0-1 min) : 0 alerte dans Kafka iot-alerts.
         - t = 60s : Déclenchement simultané des 4 pannes (2 temporaires, 2 permanentes).
         - t = 180s (3 min) : Guérison immédiate des 2 pannes temporaires.
         - t > 180s : Seules les 2 pannes permanentes continuent d'émettre des alertes.
@@ -105,9 +105,9 @@ class IoTSimulator:
                 if not sc["is_temporary"] or elapsed <= sc["end_time"]:
                     is_in_active_fault = True
 
-        # ── CAS 1 : Capteur NORMAL (soit jamais en panne, soit panne temporaire guérie après 180s, soit avant 60s)
+        # ── CAS 1 : Capteur NORMAL (jamais en panne, ou temporaire guérie après 180s, ou avant 60s)
         if not is_in_active_fault:
-            # Si la valeur était en panne/anomalie, la remettre immédiatement au centre de la plage normale
+            # Réinitialisation immédiate au centre de la plage normale si le capteur sort de panne
             if state["current_value"] < low or state["current_value"] > high:
                 state["current_value"] = (low + high) / 2.0
 
@@ -115,29 +115,30 @@ class IoTSimulator:
             noise = random.gauss(0, profile["noise_std"])
             new_value = state["current_value"] + drift_val + noise
 
-            # Régulation stricte dans la plage normale
+            # Régulation stricte au centre de la plage normale
             new_value = max(low + 1.0, min(high - 1.0, new_value))
             state["current_value"] = new_value
             return round(new_value, 2)
 
-        # ── CAS 2 : Panne ACTIVE (entre 60s et 180s pour temporaire, ou > 60s pour permanente)
+        # ── CAS 2 : Panne ACTIVE (t = 60s à 180s pour temporaires, t > 60s pour permanentes)
         else:
             sc = self.fault_scenarios[sensor_id]
             direction = sc["direction"]
             
-            # Si la panne vient tout juste d'être franchie, faire sauter immédiatement la valeur hors de la plage normale
-            if direction > 0 and state["current_value"] <= high:
-                state["current_value"] = high + 5.0
-            elif direction < 0 and state["current_value"] >= low:
-                state["current_value"] = low - 5.0
-
-            # Dérive continue accentuée
-            increment = profile["drift"] * 2.5 * direction
-            new_val = state["current_value"] + increment
+            # Valeurs d'anomalie franches qui franchissent à coup sûr les seuils de détection de Spark
+            FAULT_TARGETS = {
+                "temperature":  {"high": 95.0,  "low": 2.0},
+                "vibration":    {"high": 8.5,   "low": 8.5},  # La vibration dérive toujours vers le haut (> 5.0 mm/s)
+                "pression":     {"high": 14.0,  "low": 0.2},
+                "humidite":     {"high": 88.0,  "low": 15.0},
+                "consommation": {"high": 650.0, "low": 40.0},
+            }
             
-            floor = profile.get("fault_floor", -20.0)
-            ceiling = profile.get("fault_ceiling", 150.0)
-            state["current_value"] = max(floor, min(ceiling, new_val))
+            targets = FAULT_TARGETS.get(sensor_type, {"high": high + 10.0, "low": max(0.0, low - 10.0)})
+            target_val = targets["high"] if direction > 0 else targets["low"]
+            
+            drift_val = random.uniform(-profile["drift"], profile["drift"])
+            state["current_value"] = target_val + drift_val
             return round(state["current_value"], 2)
 
     def _delivery_report(self, err, msg):
