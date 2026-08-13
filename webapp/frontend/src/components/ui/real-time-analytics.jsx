@@ -1,51 +1,52 @@
 import React, { useState, useEffect, useRef } from "react";
-import { WarningOctagon, CheckCircle, Pulse } from "@phosphor-icons/react";
+import { WarningOctagon, CheckCircle, Pulse, ArrowUp, ArrowDown } from "@phosphor-icons/react";
 import { useWebSocket } from "../../hooks/useWebSocket";
 
-// Seuils nominaux et critiques conformes aux spécifications Spark (stream_processor.py)
+// Seuils industriels conformes au moteur Spark Streaming (stream_processor.py)
 const SENSOR_THRESHOLDS = {
-  temperature:  { min: 5.0,   max: 80.0,  unit: "°C" },
-  vibration:    { min: 0.0,   max: 5.0,   unit: "mm/s" },
-  pression:     { min: 1.0,   max: 10.0,  unit: "bar" },
-  humidite:     { min: 30.0,  max: 70.0,  unit: "%" },
-  consommation: { min: 100.0, max: 500.0, unit: "kW" },
+  temperature:  { min: 5.0,   max: 80.0,  unit: "°C",   label: "Température" },
+  vibration:    { min: 0.0,   max: 5.0,   unit: "mm/s", label: "Vibration" },
+  pression:     { min: 1.0,   max: 10.0,  unit: "bar",  label: "Pression" },
+  humidite:     { min: 30.0,  max: 70.0,  unit: "%",    label: "Humidité" },
+  consommation: { min: 100.0, max: 500.0, unit: "kW",   label: "Puissance" },
 };
 
-// Palette de 10 couleurs distinctes et haute visibilité
-const COLOR_PALETTE = [
-  "#ef4444", // Rouge Néon
-  "#f97316", // Orange Vif
-  "#a855f7", // Violet Électrique
-  "#06b6d4", // Cyan Vif
-  "#ec4899", // Rose Flash
-  "#eab308", // Jaune Ambre
-  "#10b981", // Vert Émeraude
-  "#3b82f6", // Bleu Royal
-  "#84cc16", // Vert Lime
-  "#6366f1", // Indigo
-];
-
 /**
- * Calcule l'indice normalisé en % de la plage nominale (0% = min, 100% = max)
+ * Calcule l'indice de gravité (Severity & Deviation Index) en % de dépassement au-delà du seuil critique :
+ * - Dépassement Seuil Haut (V > Max) : (V - Max) / (Max - Min) * 100  -> Direction "HIGH" (Rouge)
+ * - Chute Sous Seuil Bas  (V < Min) : (Min - V) / (Max - Min) * 100  -> Direction "LOW"  (Bleu Cyan)
  */
-function normalizeToThresholdPercentage(value, deviceType) {
+function calculateSeverityIndex(value, deviceType) {
   const t = SENSOR_THRESHOLDS[deviceType] || { min: 0, max: 100 };
-  const span = t.max - t.min;
-  if (span === 0) return 50;
-  return ((value - t.min) / span) * 100;
-}
+  const span = t.max - t.min || 1;
 
-/**
- * Génère une couleur unique et déterministe pour chaque capteur (device_id)
- */
-function getSensorColor(deviceId) {
-  if (!deviceId) return COLOR_PALETTE[0];
-  let hash = 0;
-  for (let i = 0; i < deviceId.length; i++) {
-    hash = deviceId.charCodeAt(i) + ((hash << 5) - hash);
+  if (value > t.max) {
+    const deviation = ((value - t.max) / span) * 100;
+    return {
+      severity: Math.max(1, deviation),
+      direction: "HIGH",
+      color: "#ef4444", // Rouge Néon pour Dépassement Haut (Surchauffe, Surpression)
+      badge: "Dépassement Haut",
+      thresholdVal: t.max
+    };
+  } else if (value < t.min) {
+    const deviation = ((t.min - value) / span) * 100;
+    return {
+      severity: Math.max(1, deviation),
+      direction: "LOW",
+      color: "#06b6d4", // Cyan Électrique pour Chute Basse (Sous-pression, Sous-tension)
+      badge: "Chute Basse",
+      thresholdVal: t.min
+    };
   }
-  const index = Math.abs(hash) % COLOR_PALETTE.length;
-  return COLOR_PALETTE[index];
+
+  return {
+    severity: 0,
+    direction: "NORMAL",
+    color: "#22c55e",
+    badge: "Nominal",
+    thresholdVal: t.max
+  };
 }
 
 export function RealTimeAnalytics() {
@@ -60,7 +61,7 @@ export function RealTimeAnalytics() {
 
   const width = 940;
   const height = 340;
-  const padding = { top: 30, right: 40, bottom: 50, left: 75 };
+  const padding = { top: 35, right: 40, bottom: 50, left: 85 };
 
   // Horloge temps réel continue : fait avancer l'axe X chaque seconde
   useEffect(() => {
@@ -70,7 +71,7 @@ export function RealTimeAnalytics() {
     return () => clearInterval(timer);
   }, []);
 
-  // Fonction d'ajout et de synchronisation des points d'alertes
+  // Fonction d'ajout et de synchronisation des alertes
   const processAlertsBatch = (alerts) => {
     if (!Array.isArray(alerts) || alerts.length === 0) return;
 
@@ -88,8 +89,8 @@ export function RealTimeAnalytics() {
         const unit = alert.unit || (SENSOR_THRESHOLDS[devType] ? SENSOR_THRESHOLDS[devType].unit : "");
         const location = alert.location || "AzurA Site";
 
-        // Calcul de la valeur normalisée en % de la plage critique
-        const normPercent = normalizeToThresholdPercentage(val, devType);
+        // Calcul de la gravité et de la couleur (Rouge = Haut, Cyan = Bas)
+        const sevInfo = calculateSeverityIndex(val, devType);
 
         // Conversion horodatage
         const timeMs = alert.timestamp ? new Date(alert.timestamp).getTime() : now;
@@ -103,7 +104,8 @@ export function RealTimeAnalytics() {
             points: [],
             lastUpdated: timeMs,
             status: status,
-            color: getSensorColor(devId)
+            color: sevInfo.color,
+            direction: sevInfo.direction
           };
         }
 
@@ -114,13 +116,15 @@ export function RealTimeAnalytics() {
           pts.push({
             time: timeMs,
             value: val,
-            normPercent: normPercent,
+            severity: sevInfo.severity,
+            direction: sevInfo.direction,
             status: status,
             deviceId: devId,
             deviceType: devType,
             unit: unit,
             location: location,
-            color: updated[devId].color
+            color: sevInfo.color,
+            thresholdVal: sevInfo.thresholdVal
           });
 
           // Trie par ordre chronologique et conserve les 60 derniers points
@@ -128,6 +132,8 @@ export function RealTimeAnalytics() {
           updated[devId].points = pts.slice(-60);
           updated[devId].lastUpdated = Math.max(updated[devId].lastUpdated, timeMs);
           updated[devId].status = status;
+          updated[devId].color = sevInfo.color;
+          updated[devId].direction = sevInfo.direction;
         }
       });
 
@@ -180,12 +186,13 @@ export function RealTimeAnalytics() {
     return padding.left + ((time - minTime) / timeRange) * (width - padding.left - padding.right);
   };
 
-  // Échelle Y normalisée : de -25% (sous-seuil critique) à +140% (sur-seuil critique)
-  const yMinNorm = -25;
-  const yMaxNorm = 140;
-  const getY = (normVal) => {
-    const clamped = Math.max(yMinNorm, Math.min(yMaxNorm, normVal));
-    const ratio = (clamped - yMinNorm) / (yMaxNorm - yMinNorm);
+  // Échelle Y de Gravité : de 0% (seuil d'alerte) à 60%+ (dépassement extrême)
+  const maxObservedSeverity = Math.max(35, ...activeSensors.flatMap(s => s.points.map(p => p.severity)));
+  const yMaxGravity = Math.ceil(maxObservedSeverity / 10) * 10 + 5; // Échelle adaptative propre
+
+  const getY = (sevVal) => {
+    const clamped = Math.max(0, Math.min(yMaxGravity, sevVal));
+    const ratio = clamped / yMaxGravity;
     return padding.top + (1 - ratio) * (height - padding.top - padding.bottom);
   };
 
@@ -196,13 +203,14 @@ export function RealTimeAnalytics() {
     return { time: t, label: timeStr, x: getX(t) };
   });
 
-  // Graduations de l'Axe Y Normalisé
+  // Graduations de l'Axe Y de Gravité
+  const step = yMaxGravity / 4;
   const yTicks = [
-    { val: 140, label: "+140%", type: "danger" },
-    { val: 100, label: "100% [MAX]", type: "threshold_high" },
-    { val: 50,  label: "50% [NOMINAL]", type: "nominal" },
-    { val: 0,   label: "0% [MIN]", type: "threshold_low" },
-    { val: -25, label: "-25%", type: "danger" },
+    { val: yMaxGravity, label: `+${yMaxGravity.toFixed(0)}% (Critique)` },
+    { val: step * 3,    label: `+${(step * 3).toFixed(0)}% (Élevé)` },
+    { val: step * 2,    label: `+${(step * 2).toFixed(0)}% (Modéré)` },
+    { val: step,        label: `+${step.toFixed(0)}% (Faible)` },
+    { val: 0,           label: `0% [Seuil]` },
   ];
 
   // Points visibles pour l'infobulle interactif
@@ -242,11 +250,11 @@ export function RealTimeAnalytics() {
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <Pulse size={28} weight="bold" style={{ color: "var(--azura-accent-red)" }} />
             <h2 style={{ fontSize: "1.35rem", fontWeight: 800, color: "var(--azura-text)", margin: 0 }}>
-              Analyse Temps Réel des Flux d'Alertes (Échelle Normalisée)
+              Analyse Temps Réel — Indice de Gravité des Alertes
             </h2>
           </div>
           <p style={{ color: "var(--azura-text-muted)", fontSize: "0.875rem", marginTop: "4px", margin: 0 }}>
-            Normalisation unifiée en <strong>% de la plage nominale (0% = seuil bas, 100% = seuil haut)</strong> — Topic: <code>iot-alerts</code>
+            Échelle de dépassement critique : <span style={{ color: "#ef4444", fontWeight: 700 }}>🔴 Rouge = Dépassement Haut</span> | <span style={{ color: "#06b6d4", fontWeight: 700 }}>🔵 Cyan = Chute Basse</span>
           </p>
         </div>
 
@@ -306,24 +314,33 @@ export function RealTimeAnalytics() {
           onMouseLeave={() => setHoveredData(null)}
           style={{ overflow: "visible", cursor: "crosshair" }}
         >
-          {/* Zone Nominale de Sécurité (Ombrage vert discret entre 0% et 100%) */}
+          <defs>
+            {/* Dégradé vertical d'intensité d'alerte */}
+            <linearGradient id="alertZoneGrad" x1="0%" y1="100%" x2="0%" y2="0%">
+              <stop offset="0%" stopColor="#22c55e" stopOpacity="0.03" />
+              <stop offset="50%" stopColor="#f59e0b" stopOpacity="0.08" />
+              <stop offset="100%" stopColor="#ef4444" stopOpacity="0.15" />
+            </linearGradient>
+          </defs>
+
+          {/* Zone d'Arrière-Plan Dégradée de Sévérité */}
           <rect
             x={padding.left}
-            y={getY(100)}
+            y={padding.top}
             width={width - padding.left - padding.right}
-            height={getY(0) - getY(100)}
-            fill="rgba(34, 197, 94, 0.04)"
-            stroke="none"
+            height={height - padding.top - padding.bottom}
+            fill="url(#alertZoneGrad)"
+            rx="6"
           />
 
-          {/* Lignes de Seuils et Graduations de l'Axe Y Normalisé */}
+          {/* Lignes de Seuils et Graduations de l'Axe Y de Gravité */}
           {yTicks.map((tick, i) => {
             const yPos = getY(tick.val);
-            const isThreshold = tick.val === 100 || tick.val === 0;
-            const strokeColor = isThreshold ? "#ef4444" : "var(--azura-border)";
-            const strokeDash = isThreshold ? "6 4" : "4 4";
-            const strokeWidth = isThreshold ? "1.5" : "1";
-            const opacity = isThreshold ? "0.8" : "0.3";
+            const isBase = tick.val === 0;
+            const strokeColor = isBase ? "#ef4444" : "var(--azura-border)";
+            const strokeDash = isBase ? "none" : "4 4";
+            const strokeWidth = isBase ? "2" : "1";
+            const opacity = isBase ? "0.9" : "0.35";
 
             return (
               <g key={i}>
@@ -340,9 +357,9 @@ export function RealTimeAnalytics() {
                 <text
                   x={padding.left - 10}
                   y={yPos + 4}
-                  fill={isThreshold ? "#ef4444" : "var(--azura-text-muted)"}
+                  fill={isBase ? "#ef4444" : "var(--azura-text-muted)"}
                   fontSize="11"
-                  fontWeight={isThreshold ? "800" : "600"}
+                  fontWeight={isBase ? "800" : "600"}
                   textAnchor="end"
                   fontFamily="monospace"
                 >
@@ -377,17 +394,7 @@ export function RealTimeAnalytics() {
             </g>
           ))}
 
-          {/* Ligne de base Axe X */}
-          <line
-            x1={padding.left}
-            y1={height - padding.bottom}
-            x2={width - padding.right}
-            y2={height - padding.bottom}
-            stroke="var(--azura-border)"
-            strokeWidth="1.5"
-          />
-
-          {/* Tracé des courbes dynamiques normalisées par capteur */}
+          {/* Tracé des courbes de gravité par capteur */}
           {activeCount === 0 ? (
             <g>
               <circle cx={width / 2 - 180} cy={height / 2 - 10} r="7" fill="#22c55e" />
@@ -409,22 +416,22 @@ export function RealTimeAnalytics() {
 
               const strokeColor = series.color;
 
-              // Tracé SVG utilisant la valeur normalisée normPercent
+              // Tracé SVG utilisant l'indice de gravité severity
               const dPath = pts
                 .map((pt, i) => {
                   const x = getX(pt.time);
-                  const y = getY(pt.normPercent);
+                  const y = getY(pt.severity);
                   return `${i === 0 ? "M" : "L"} ${x},${y}`;
                 })
                 .join(" ");
 
               const lastPt = pts[pts.length - 1];
               const lastX = getX(lastPt.time);
-              const lastY = getY(lastPt.normPercent);
+              const lastY = getY(lastPt.severity);
 
               return (
                 <g key={series.device_id}>
-                  {/* Courbe Néon Normalisée */}
+                  {/* Courbe Néon avec Lueur */}
                   <path
                     d={dPath}
                     fill="none"
@@ -466,7 +473,7 @@ export function RealTimeAnalytics() {
               />
               <circle
                 cx={getX(hoveredData.time)}
-                cy={getY(hoveredData.normPercent)}
+                cy={getY(hoveredData.severity)}
                 r="7"
                 fill="none"
                 stroke={hoveredData.color}
@@ -476,13 +483,13 @@ export function RealTimeAnalytics() {
           )}
         </svg>
 
-        {/* Infobulle de Survol (Hover Tooltip avec Valeur Réelle + % de Seuil) */}
+        {/* Infobulle de Survol (Hover Tooltip avec Valeur Réelle + Gravité) */}
         {hoveredData && (
           <div
             style={{
               position: "absolute",
               left: `${Math.max(100, Math.min(width - 180, getX(hoveredData.time)))}px`,
-              top: `${Math.max(20, getY(hoveredData.normPercent) - 80)}px`,
+              top: `${Math.max(20, getY(hoveredData.severity) - 85)}px`,
               transform: "translateX(-50%)",
               backgroundColor: "var(--azura-card-bg)",
               border: `1.5px solid ${hoveredData.color}`,
@@ -498,17 +505,27 @@ export function RealTimeAnalytics() {
               <span style={{ fontWeight: 800, color: "var(--azura-text)", fontSize: "0.9rem" }}>
                 {hoveredData.deviceId}
               </span>
+              <span style={{
+                fontSize: "0.7rem",
+                fontWeight: 800,
+                color: hoveredData.color,
+                backgroundColor: `${hoveredData.color}15`,
+                padding: "2px 6px",
+                borderRadius: "4px"
+              }}>
+                {hoveredData.direction === "HIGH" ? "🔴 DÉPASSEMENT HAUT" : "🔵 CHUTE BASSE"}
+              </span>
             </div>
-            <div style={{ color: hoveredData.color, fontSize: "1.15rem", fontWeight: 800 }}>
+            <div style={{ color: hoveredData.color, fontSize: "1.2rem", fontWeight: 800 }}>
               {hoveredData.value} {hoveredData.unit}
             </div>
             <div style={{
               fontSize: "0.75rem",
               fontWeight: 800,
-              color: hoveredData.normPercent > 100 || hoveredData.normPercent < 0 ? "#ef4444" : "#22c55e",
+              color: hoveredData.color,
               marginTop: "2px"
             }}>
-              📊 Indice Seuil: {hoveredData.normPercent.toFixed(1)}% {hoveredData.normPercent > 100 ? "(Surchauffe/Surpression)" : hoveredData.normPercent < 0 ? "(Sous-seuil critique)" : "(Nominal)"}
+              🚨 Gravité: +{hoveredData.severity.toFixed(1)}% au-delà du seuil critique ({hoveredData.thresholdVal} {hoveredData.unit})
             </div>
             <div style={{ color: "var(--azura-text-muted)", fontSize: "0.75rem", fontFamily: "monospace", marginTop: "2px" }}>
               🕒 {new Date(hoveredData.time).toLocaleTimeString()}
@@ -517,7 +534,7 @@ export function RealTimeAnalytics() {
         )}
       </div>
 
-      {/* Cartes Légendes Dynamiques */}
+      {/* Cartes Légendes Dynamiques Récapitulatives */}
       {activeCount > 0 && (
         <div style={{
           display: "grid",
@@ -527,6 +544,7 @@ export function RealTimeAnalytics() {
         }}>
           {activeSensors.map((series) => {
             const lastPt = series.points[series.points.length - 1];
+            const isHigh = series.direction === "HIGH";
 
             return (
               <div
@@ -543,9 +561,16 @@ export function RealTimeAnalytics() {
                 }}
               >
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
-                  <span style={{ fontSize: "0.75rem", fontWeight: 800, color: series.color, textTransform: "uppercase" }}>
-                    {series.device_type}
-                  </span>
+                  <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                    {isHigh ? (
+                      <ArrowUp size={14} weight="bold" style={{ color: series.color }} />
+                    ) : (
+                      <ArrowDown size={14} weight="bold" style={{ color: series.color }} />
+                    )}
+                    <span style={{ fontSize: "0.75rem", fontWeight: 800, color: series.color, textTransform: "uppercase" }}>
+                      {series.device_type}
+                    </span>
+                  </div>
                   <span style={{ fontSize: "0.75rem", color: "var(--azura-text-muted)" }}>
                     {series.location}
                   </span>
@@ -558,15 +583,15 @@ export function RealTimeAnalytics() {
                     <span style={{ fontSize: "1.2rem", fontWeight: 800, color: series.color }}>
                       {lastPt ? lastPt.value : 0} {series.unit}
                     </span>
-                    <span style={{ fontSize: "0.75rem", color: "var(--azura-text-muted)", marginLeft: "6px" }}>
-                      ({lastPt ? lastPt.normPercent.toFixed(0) : 0}%)
+                    <span style={{ fontSize: "0.75rem", fontWeight: 700, color: series.color, marginLeft: "6px" }}>
+                      (+{lastPt ? lastPt.severity.toFixed(0) : 0}% gravité)
                     </span>
                   </div>
                   <span style={{
                     fontSize: "0.75rem",
                     fontWeight: 800,
-                    color: "#ef4444",
-                    backgroundColor: "rgba(239,68,68,0.1)",
+                    color: series.color,
+                    backgroundColor: `${series.color}15`,
                     padding: "3px 8px",
                     borderRadius: "6px"
                   }}>
