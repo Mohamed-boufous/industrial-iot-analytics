@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { ShieldCheck, WarningOctagon, Pulse, ArrowUp, ArrowDown } from "@phosphor-icons/react";
+import { ShieldCheck, WarningOctagon, Waveform, Radio, ArrowUp, ArrowDown } from "@phosphor-icons/react";
 import { useWebSocket } from "../../hooks/useWebSocket";
 import { RollingTime } from "./RollingTime";
 
@@ -27,29 +27,17 @@ const SENSOR_DIAGNOSTICS = {
 };
 
 // Palette de 8 couleurs distinctes pour identifier chaque capteur (tête de courbe + carte)
+// Exclut formellement : Rouge (réservé dépassement haut), Bleu/Cyan (réservé chute basse), Blanc et Noir
 const SENSOR_ID_COLORS = [
-  "#eab308", // Jaune Ambre
-  "#a855f7", // Violet Électrique
-  "#10b981", // Vert Émeraude
-  "#ec4899", // Rose Flash
-  "#3b82f6", // Bleu Royal
-  "#f97316", // Orange Mandarine
-  "#06b6d4", // Cyan Électrique
-  "#84cc16", // Vert Lime
+  "#facc15", // 1. Jaune Ambre / Or Vif
+  "#c084fc", // 2. Violet Néon / Pourpre
+  "#34d399", // 3. Vert Émeraude / Menthe
+  "#fb923c", // 4. Orange Vif / Mandarine
+  "#f472b6", // 5. Rose Magenta Flash
+  "#a3e635", // 6. Vert Lime Acidulé
+  "#e879f9", // 7. Fuchsia Lumineux
+  "#fdba74", // 8. Pêche Électrique
 ];
-
-/**
- * Attribue une couleur unique et permanente à chaque identifiant de capteur
- */
-function getUniqueSensorColor(deviceId) {
-  if (!deviceId) return SENSOR_ID_COLORS[0];
-  let hash = 0;
-  for (let i = 0; i < deviceId.length; i++) {
-    hash = deviceId.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const index = Math.abs(hash) % SENSOR_ID_COLORS.length;
-  return SENSOR_ID_COLORS[index];
-}
 
 /**
  * Calcule l'indice de gravité (Severity & Deviation Index) en % de dépassement au-delà du seuil critique
@@ -127,9 +115,8 @@ export function RealTimeAnalytics() {
         const unit = alert.unit || (SENSOR_THRESHOLDS[devType] ? SENSOR_THRESHOLDS[devType].unit : "");
         const location = alert.location || "AzurA Site";
 
-        // Calcul de la gravité et couleur d'identité unique
+        // Calcul de la gravité
         const sevInfo = calculateSeverityIndex(val, devType);
-        const uniqueColor = getUniqueSensorColor(devId);
         const diagnostic = SENSOR_DIAGNOSTICS[status] || "Dérive Opérationnelle";
 
         // Conversion horodatage
@@ -146,7 +133,6 @@ export function RealTimeAnalytics() {
             status: status,
             diagnostic: diagnostic,
             directionColor: sevInfo.directionColor,
-            uniqueColor: uniqueColor,
             direction: sevInfo.direction
           };
         }
@@ -167,7 +153,6 @@ export function RealTimeAnalytics() {
             unit: unit,
             location: location,
             directionColor: sevInfo.directionColor,
-            uniqueColor: uniqueColor,
             thresholdVal: sevInfo.thresholdVal
           });
 
@@ -178,7 +163,6 @@ export function RealTimeAnalytics() {
           updated[devId].status = status;
           updated[devId].diagnostic = diagnostic;
           updated[devId].directionColor = sevInfo.directionColor;
-          updated[devId].uniqueColor = uniqueColor;
           updated[devId].direction = sevInfo.direction;
         }
       });
@@ -223,8 +207,23 @@ export function RealTimeAnalytics() {
   const timeRange = maxTime - minTime;
 
   // Capteurs actifs ayant émis une alerte dans les 60 dernières secondes
-  const activeSensors = Object.values(sensorSeries).filter((s) => {
+  // Triés par device_id pour assurer une attribution de couleur stable et 100% DISTINCTE (zéro collision)
+  const rawActive = Object.values(sensorSeries).filter((s) => {
     return s.points.some((p) => p.time >= currentTime - 60000);
+  });
+  rawActive.sort((a, b) => (a.device_id || "").localeCompare(b.device_id || ""));
+
+  // Attribution d'une couleur UNIQUE garantie sans collision à chaque capteur actif
+  const activeSensors = rawActive.map((sensor, idx) => {
+    const assignedColor = SENSOR_ID_COLORS[idx % SENSOR_ID_COLORS.length];
+    return {
+      ...sensor,
+      uniqueColor: assignedColor,
+      points: sensor.points.map((pt) => ({
+        ...pt,
+        uniqueColor: assignedColor,
+      })),
+    };
   });
   const activeCount = activeSensors.length;
 
@@ -299,69 +298,36 @@ export function RealTimeAnalytics() {
         padding: "24px",
         boxShadow: "0 10px 30px rgba(0,0,0,0.04)"
       }}>
-        {/* Entête du Graphique */}
+        {/* Entête du Graphique : Titre Centré & Épuré */}
         <div style={{
           display: "flex",
-          justifyContent: "space-between",
+          flexDirection: "column",
           alignItems: "center",
-          marginBottom: "20px",
-          flexWrap: "wrap",
-          gap: "12px"
+          justifyContent: "center",
+          textAlign: "center",
+          marginBottom: "18px",
+          gap: "6px"
         }}>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              <Pulse size={24} weight="bold" style={{ color: "var(--azura-accent-red)" }} />
-              <h2 style={{ fontSize: "1.25rem", fontWeight: 800, color: "var(--azura-text)", margin: 0, letterSpacing: "-0.01em" }}>
-                Dynamique des Dérives d'Anomalies
-              </h2>
-            </div>
-            <p style={{ color: "var(--azura-text-muted)", fontSize: "0.825rem", marginTop: "3px", margin: 0 }}>
-              Mesure en direct du dépassement des seuils tolérés par équipement
-            </p>
-          </div>
-
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            {/* Indicateur de Connexion Télémétrique */}
-            <div style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              padding: "6px 14px",
-              backgroundColor: isConnected ? "rgba(34, 197, 94, 0.08)" : "rgba(239, 68, 68, 0.08)",
-              border: `1px solid ${isConnected ? "rgba(34, 197, 94, 0.25)" : "rgba(239, 68, 68, 0.25)"}`,
-              borderRadius: "9999px"
+          <div style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "10px",
+            padding: "4px 16px",
+            borderRadius: "9999px",
+            backgroundColor: "rgba(255, 255, 255, 0.02)",
+          }}>
+            {/* Icône Vintage & Moderne (Waveform Oscilloscope Télémétrique) */}
+            <Waveform size={24} weight="bold" style={{ color: "var(--azura-accent-red)", filter: "drop-shadow(0 0 8px rgba(239, 68, 68, 0.45))" }} />
+            <h2 style={{
+              fontSize: "1.25rem",
+              fontWeight: 800,
+              color: "var(--azura-text)",
+              margin: 0,
+              letterSpacing: "-0.02em",
+              fontFamily: "'Plus Jakarta Sans', sans-serif"
             }}>
-              <span style={{
-                width: "7px",
-                height: "7px",
-                borderRadius: "50%",
-                backgroundColor: isConnected ? "#22c55e" : "#ef4444",
-                boxShadow: isConnected ? "0 0 8px #22c55e" : "none"
-              }} />
-              <span style={{ color: isConnected ? "#22c55e" : "#ef4444", fontSize: "0.8rem", fontWeight: "700" }}>
-                {isConnected ? "Flux Continu" : "Connexion..."}
-              </span>
-            </div>
-
-            {/* Compteur d'Incidents Actifs */}
-            <div style={{
-              padding: "6px 16px",
-              backgroundColor: activeCount > 0 ? "rgba(239, 68, 68, 0.08)" : "rgba(34, 197, 94, 0.08)",
-              border: `1px solid ${activeCount > 0 ? "rgba(239, 68, 68, 0.25)" : "rgba(34, 197, 94, 0.25)"}`,
-              borderRadius: "9999px",
-              display: "flex",
-              alignItems: "center",
-              gap: "8px"
-            }}>
-              {activeCount > 0 ? (
-                <WarningOctagon size={18} weight="fill" style={{ color: "#ef4444" }} />
-              ) : (
-                <ShieldCheck size={18} weight="fill" style={{ color: "#22c55e" }} />
-              )}
-              <span style={{ fontSize: "0.85rem", fontWeight: "800", color: activeCount > 0 ? "#ef4444" : "#22c55e" }}>
-                {activeCount === 0 ? "Aucune Dérive Détectée" : activeCount === 1 ? "1 Incident en Cours" : `${activeCount} Incidents en Cours`}
-              </span>
-            </div>
+              Dynamique des Dérives d'Anomalies
+            </h2>
           </div>
         </div>
 
@@ -478,17 +444,22 @@ export function RealTimeAnalytics() {
 
             {/* Tracé des courbes de dérive (Clip Path Strict) */}
             {activeCount === 0 ? (
-              <g>
-                <circle cx={width / 2 - 170} cy={height / 2 - 10} r="7" fill="#22c55e" />
+              <g transform={`translate(${padding.left + (width - padding.left - padding.right) / 2}, ${padding.top + (height - padding.top - padding.bottom) / 2})`}>
+                {/* Pastille Lumineuse Verte avec Halo */}
+                <circle cx="-160" cy="0" r="5" fill="#22c55e" />
+                <circle cx="-160" cy="0" r="9" fill="#22c55e" opacity="0.25" />
+                
+                {/* Texte Centré Proprement Sans Fond Vert */}
                 <text
-                  x={width / 2}
-                  y={height / 2 - 5}
-                  fill="var(--azura-text-muted)"
-                  fontSize="13"
+                  x="-142"
+                  y="4"
+                  fill="var(--azura-text)"
+                  fontSize="12.5"
                   fontWeight="700"
-                  textAnchor="middle"
+                  textAnchor="start"
+                  letterSpacing="0.02em"
                 >
-                  Système AzurA 100% Opérationnel — Aucun dépassement de seuil
+                  Système AzurA Nominal — Aucun dépassement de seuil
                 </text>
               </g>
             ) : (
@@ -532,7 +503,7 @@ export function RealTimeAnalytics() {
               </g>
             )}
 
-            {/* Têtes de Courbes Colorées Distinctes par Capteur */}
+            {/* Têtes de Courbes Colorées 100% DISTINCTES par Capteur */}
             {activeSensors.map((series) => {
               const pts = series.points;
               if (pts.length === 0) return null;
@@ -541,7 +512,7 @@ export function RealTimeAnalytics() {
 
               const lastX = Math.max(padding.left, Math.min(width - padding.right, getX(lastPt.time)));
               const lastY = getY(lastPt.severity);
-              const headColor = series.uniqueColor;
+              const headColor = series.uniqueColor; // Couleur garantie 100% unique parmi les capteurs actifs
               const isThisHovered = hoveredData && hoveredData.deviceId === series.device_id;
 
               return (
@@ -663,6 +634,108 @@ export function RealTimeAnalytics() {
             </div>
           )}
         </div>
+
+        {/* Barre Inférieure de Contrôles & Statuts Intégrée au Cadre */}
+        <div style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginTop: "16px",
+          paddingTop: "14px",
+          borderTop: "1px solid var(--azura-border)",
+          flexWrap: "wrap",
+          gap: "12px"
+        }}>
+          {/* Groupe de Boutons Télémétriques Haut de Gamme */}
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            {/* 1. Bouton Statut Flux Continu */}
+            <div style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "8px",
+              padding: "6px 14px",
+              backgroundColor: isConnected ? "rgba(34, 197, 94, 0.08)" : "rgba(239, 68, 68, 0.08)",
+              border: `1px solid ${isConnected ? "rgba(34, 197, 94, 0.28)" : "rgba(239, 68, 68, 0.28)"}`,
+              borderRadius: "8px",
+              boxShadow: isConnected ? "0 2px 8px rgba(34, 197, 94, 0.1)" : "none",
+              transition: "all 0.2s ease"
+            }}>
+              <span style={{
+                width: "8px",
+                height: "8px",
+                borderRadius: "50%",
+                backgroundColor: isConnected ? "#22c55e" : "#ef4444",
+                boxShadow: isConnected ? "0 0 8px #22c55e" : "none"
+              }} />
+              <span style={{
+                color: isConnected ? "#22c55e" : "#ef4444",
+                fontSize: "0.8125rem",
+                fontWeight: 700,
+                letterSpacing: "0.01em",
+                fontFamily: "'Plus Jakarta Sans', sans-serif"
+              }}>
+                {isConnected ? "Flux Continu" : "Connexion..."}
+              </span>
+            </div>
+
+            {/* 2. Bouton Décompte Incidents Actifs */}
+            <div style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "8px",
+              padding: "6px 16px",
+              backgroundColor: activeCount > 0 ? "rgba(239, 68, 68, 0.08)" : "rgba(34, 197, 94, 0.08)",
+              border: `1px solid ${activeCount > 0 ? "rgba(239, 68, 68, 0.3)" : "rgba(34, 197, 94, 0.28)"}`,
+              borderRadius: "8px",
+              boxShadow: activeCount > 0 ? "0 2px 10px rgba(239, 68, 68, 0.12)" : "0 2px 8px rgba(34, 197, 94, 0.1)",
+              transition: "all 0.2s ease"
+            }}>
+              {activeCount > 0 ? (
+                <WarningOctagon size={18} weight="fill" style={{ color: "#ef4444" }} />
+              ) : (
+                <ShieldCheck size={18} weight="fill" style={{ color: "#22c55e" }} />
+              )}
+              <span style={{
+                fontSize: "0.8125rem",
+                fontWeight: 800,
+                color: activeCount > 0 ? "#ef4444" : "#22c55e",
+                letterSpacing: "0.01em",
+                fontFamily: "'Plus Jakarta Sans', sans-serif"
+              }}>
+                {activeCount === 0 ? "Aucune Dérive Détectée" : activeCount === 1 ? "1 Incident en Cours" : `${activeCount} Incidents en Cours`}
+              </span>
+            </div>
+          </div>
+
+          {/* 3. Horodatage Dynamique avec Rolling Time */}
+          <div style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "8px",
+            padding: "6px 14px",
+            backgroundColor: "rgba(0, 0, 0, 0.02)",
+            border: "1px solid var(--azura-border)",
+            borderRadius: "8px"
+          }}>
+            <span style={{
+              fontSize: "0.78rem",
+              color: "var(--azura-text-muted)",
+              fontWeight: 600,
+              fontFamily: "'Plus Jakarta Sans', sans-serif"
+            }}>
+              Dernière mise à jour :
+            </span>
+            <RollingTime
+              timestamp={currentTime}
+              style={{
+                color: "var(--azura-text)",
+                fontWeight: 800,
+                fontSize: "0.8125rem",
+                fontFamily: "'JetBrains Mono', monospace"
+              }}
+            />
+          </div>
+        </div>
       </div>
 
       {/* Grille des Fiches de Triage des Incidents Actifs */}
@@ -678,10 +751,6 @@ export function RealTimeAnalytics() {
             <h3 style={{ fontSize: "1.05rem", fontWeight: 800, color: "var(--azura-text)", margin: 0 }}>
               Équipements en Dérive Critique ({activeCount})
             </h3>
-            <span style={{ fontSize: "0.8rem", color: "var(--azura-text-muted)", display: "inline-flex", alignItems: "center", gap: "6px" }}>
-              <span>Dernière mise à jour :</span>
-              <RollingTime timestamp={currentTime} style={{ color: "var(--azura-text)", fontWeight: 700 }} />
-            </span>
           </div>
 
           <div style={{
@@ -692,7 +761,7 @@ export function RealTimeAnalytics() {
             {activeSensors.map((series) => {
               const lastPt = series.points[series.points.length - 1];
               const isHigh = series.direction === "HIGH";
-              const idColor = series.uniqueColor;
+              const idColor = series.uniqueColor; // Couleur garantie 100% unique
               const isThisHovered = hoveredData && hoveredData.deviceId === series.device_id;
 
               return (
