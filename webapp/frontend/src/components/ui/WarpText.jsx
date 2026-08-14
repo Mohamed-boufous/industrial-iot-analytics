@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Renderer, Program, Mesh, Triangle, Texture } from 'ogl';
 
 const vertex = `#version 300 es
@@ -113,12 +113,14 @@ void main() {
 const getFontValue = value => (typeof value === 'number' ? `${value}px` : value);
 
 const resolveColor = (colorStr) => {
-  if (typeof document !== 'undefined') {
-    const isDark = document.documentElement.classList.contains('dark');
-    if (isDark) return '#FFFFFF';
-    return '#0F172A';
+  if (!colorStr || colorStr === 'inherit' || colorStr.startsWith('var(')) {
+    if (typeof document !== 'undefined') {
+      const isDark = document.documentElement.classList.contains('dark');
+      return isDark ? '#FFFFFF' : '#0F172A';
+    }
+    return '#FFFFFF';
   }
-  return colorStr || '#FFFFFF';
+  return colorStr;
 };
 
 const measureLine = (ctx, line, letterSpacing) => {
@@ -129,7 +131,7 @@ const measureLine = (ctx, line, letterSpacing) => {
 
 const drawLine = (ctx, line, x, y, letterSpacing) => {
   const chars = Array.from(line);
-  let cursor = x;
+  let cursor = x - measureLine(ctx, line, letterSpacing) / 2;
 
   chars.forEach((char, index) => {
     ctx.fillText(char, cursor, y);
@@ -161,7 +163,7 @@ const buildTextCanvas = ({ container, width, height, dpr, props }) => {
   });
   container.appendChild(probe);
   const computed = window.getComputedStyle(probe);
-  let fontSizePx = parseFloat(computed.fontSize) || 32;
+  let fontSizePx = parseFloat(computed.fontSize) || 30;
   const fontFamily = computed.fontFamily || "'Plus Jakarta Sans', sans-serif";
   const fontWeight = computed.fontWeight || String(props.fontWeight);
   let letterSpacing = computed.letterSpacing === 'normal' ? 0 : parseFloat(computed.letterSpacing) || 0;
@@ -198,8 +200,9 @@ const buildTextCanvas = ({ container, width, height, dpr, props }) => {
     applyFont();
   }
 
+  const offsetX = typeof props.offsetX === 'number' ? props.offsetX : 0;
   const startY = height / 2 - (lineHeight * (lines.length - 1)) / 2;
-  lines.forEach((line, index) => drawLine(ctx, line, 0, startY + index * lineHeight, letterSpacing));
+  lines.forEach((line, index) => drawLine(ctx, line, width / 2 + offsetX, startY + index * lineHeight, letterSpacing));
 
   return canvas;
 };
@@ -215,23 +218,24 @@ const syncUniforms = (program, props) => {
   uniforms.uRipple.value = props.ripple ? 1 : 0;
 };
 
-export const WarpText = ({
+const WarpText = ({
   text = 'Supervision des Dérives & Alertes',
-  color = '#ffffff',
-  warpStrength = 0.08,
-  warpScale = 1.7,
-  speed = 0.55,
-  pointerInfluence = 0.42,
-  pointerStrength = 0.38,
-  refraction = 0.018,
+  color = 'inherit',
+  warpStrength = 0.07,
+  warpScale = 1.6,
+  speed = 0.5,
+  pointerInfluence = 0.38,
+  pointerStrength = 0.35,
+  refraction = 0.016,
   ripple = true,
-  fontSize = '1.75rem',
+  fontSize = 'clamp(1.5rem, 2.8vw, 2.2rem)',
   fontWeight = 800,
   fontFamily = "'Plus Jakarta Sans', sans-serif",
   letterSpacing = '-0.02em',
   lineHeight = 1.1,
+  offsetX,
   className = '',
-  style = {}
+  style
 }) => {
   const containerRef = useRef(null);
   const propsRef = useRef({
@@ -242,6 +246,7 @@ export const WarpText = ({
     fontFamily,
     letterSpacing,
     lineHeight,
+    offsetX,
     warpStrength,
     warpScale,
     speed,
@@ -252,7 +257,7 @@ export const WarpText = ({
   });
   const contextRef = useRef(null);
 
-  // Synchronisation avec le changement de thème clair / sombre (Dark Mode)
+  // Synchronisation dynamique du thème clair / sombre (Dark Mode)
   useEffect(() => {
     const observer = new MutationObserver(() => {
       if (contextRef.current) {
@@ -272,6 +277,7 @@ export const WarpText = ({
       fontFamily,
       letterSpacing,
       lineHeight,
+      offsetX,
       warpStrength,
       warpScale,
       speed,
@@ -544,8 +550,9 @@ export const WarpText = ({
         position: 'relative',
         display: 'block',
         width: '100%',
-        height: '42px',
+        height: '48px',
         overflow: 'hidden',
+        isolation: 'isolate',
         ...style
       }}
       role="heading"
@@ -556,3 +563,4 @@ export const WarpText = ({
 };
 
 export default WarpText;
+export { WarpText };
