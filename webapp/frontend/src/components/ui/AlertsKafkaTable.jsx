@@ -158,7 +158,7 @@ export function AlertsKafkaTable({ alerts = [] }) {
 
       // Couleur stricte : ROUGE pour HIGH, BLEU pour LOW
       const directionColor = isHigh ? "#ef4444" : "#0284c7"; // Rouge vif vs Bleu electrique cyan
-      const statusLabel = isHigh ? "CRITIQUE (HAUT)" : "CRITIQUE (BAS)";
+      const statusLabel = isHigh ? "Haut" : "Bas";
 
       return {
         id: al._id || al.alert_id || `al-${idx}-${al.device_id}-${al.timestamp}`,
@@ -443,22 +443,22 @@ export function AlertsKafkaTable({ alerts = [] }) {
         <Table style={{ width: "100%", tableLayout: "fixed" }}>
           <TableHeader style={{ backgroundColor: "rgba(255, 255, 255, 0.02)" }}>
             <TableRow style={{ borderBottom: "1px solid var(--azura-border)" }}>
-              <TableHead style={{ width: "18%", color: "var(--azura-text)", fontWeight: 800, fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.05em", padding: "14px 16px" }}>
+              <TableHead style={{ width: "18%", color: "var(--azura-text)", fontWeight: 800, fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "center", padding: "14px 16px" }}>
                 Equipement
               </TableHead>
-              <TableHead style={{ width: "18%", color: "var(--azura-text)", fontWeight: 800, fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.05em", padding: "14px 16px" }}>
+              <TableHead style={{ width: "18%", color: "var(--azura-text)", fontWeight: 800, fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "center", padding: "14px 16px" }}>
                 Grandeur Mesuree
               </TableHead>
-              <TableHead style={{ width: "20%", color: "var(--azura-text)", fontWeight: 800, fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.05em", padding: "14px 16px" }}>
+              <TableHead style={{ width: "20%", color: "var(--azura-text)", fontWeight: 800, fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "center", padding: "14px 16px" }}>
                 Emplacement
               </TableHead>
-              <TableHead style={{ width: "18%", color: "var(--azura-text)", fontWeight: 800, fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.05em", padding: "14px 16px" }}>
+              <TableHead style={{ width: "18%", color: "var(--azura-text)", fontWeight: 800, fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "center", padding: "14px 16px" }}>
                 Valeur / Tolerance
               </TableHead>
-              <TableHead style={{ width: "14%", color: "var(--azura-text)", fontWeight: 800, fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.05em", padding: "14px 16px" }}>
-                Statut
+              <TableHead style={{ width: "13%", color: "var(--azura-text)", fontWeight: 800, fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "center", padding: "14px 16px" }}>
+                Critique
               </TableHead>
-              <TableHead style={{ width: "12%", color: "var(--azura-text)", fontWeight: 800, fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "right", padding: "14px 16px" }}>
+              <TableHead style={{ width: "13%", color: "var(--azura-text)", fontWeight: 800, fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "center", padding: "14px 16px" }}>
                 Horodatage
               </TableHead>
             </TableRow>
@@ -467,7 +467,6 @@ export function AlertsKafkaTable({ alerts = [] }) {
           <TableBody>
             {rows.length > 0 ? (
               rows.map((row) => {
-                const IconComponent = row.MetricIcon;
                 return (
                   <TableRow
                     key={row.id}
@@ -477,55 +476,47 @@ export function AlertsKafkaTable({ alerts = [] }) {
                     }}
                     className="hover:bg-white/[0.03]"
                   >
-                    {/* Colonne 1 : Equipement (Pastille Rouge pour HIGH, Bleu pour LOW) */}
-                    <TableCell style={{ padding: "14px 16px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "9px" }}>
+                    {/* Colonne 1 : Equipement (Centre avec pastille Rouge pour HIGH, Bleu pour LOW) */}
+                    <TableCell style={{ padding: "14px 16px", textAlign: "center" }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
                         <div style={{
-                          width: "9px",
-                          height: "9px",
+                          width: "8px",
+                          height: "8px",
                           borderRadius: "50%",
                           backgroundColor: row.directionColor,
-                          boxShadow: `0 0 9px ${row.directionColor}`
+                          boxShadow: `0 0 8px ${row.directionColor}`,
+                          flexShrink: 0
                         }} />
                         <span style={{
                           fontWeight: 800,
                           color: "var(--azura-text)",
                           fontFamily: "'JetBrains Mono', monospace",
-                          fontSize: "0.9rem"
+                          fontSize: "0.88rem"
                         }}>
                           {row.device_id}
                         </span>
                       </div>
                     </TableCell>
 
-                    {/* Colonne 2 : Grandeur & Icone Phosphor Pure */}
-                    <TableCell style={{ padding: "14px 16px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <div style={{
-                          padding: "5px",
-                          borderRadius: "6px",
-                          backgroundColor: `${row.metricColor}15`,
-                          color: row.metricColor,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center"
-                        }}>
-                          <IconComponent size={16} weight="bold" />
-                        </div>
-                        <span style={{ fontWeight: 700, color: "var(--azura-text)", fontSize: "0.84rem" }}>
-                          {row.device_type}
-                        </span>
-                      </div>
+                    {/* Colonne 2 : Grandeur Mesuree (Texte pur centre sans icone ni emoji) */}
+                    <TableCell style={{ padding: "14px 16px", textAlign: "center" }}>
+                      <span style={{
+                        fontWeight: 700,
+                        color: "var(--azura-text)",
+                        fontSize: "0.86rem"
+                      }}>
+                        {row.device_type}
+                      </span>
                     </TableCell>
 
-                    {/* Colonne 3 : Emplacement Industriel */}
-                    <TableCell style={{ padding: "14px 16px", color: "var(--azura-text-muted)", fontSize: "0.84rem", fontWeight: 500 }}>
+                    {/* Colonne 3 : Emplacement Industriel (Centre) */}
+                    <TableCell style={{ padding: "14px 16px", textAlign: "center", color: "var(--azura-text-muted)", fontSize: "0.84rem", fontWeight: 500 }}>
                       {row.location}
                     </TableCell>
 
-                    {/* Colonne 4 : Valeur Mesuree vs Seuil (Rouge pour HIGH, Bleu pour LOW) */}
-                    <TableCell style={{ padding: "14px 16px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    {/* Colonne 4 : Valeur Mesuree vs Seuil (Centre avec fleche Rouge pour HIGH, Bleu pour LOW) */}
+                    <TableCell style={{ padding: "14px 16px", textAlign: "center" }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
                         <span style={{
                           fontWeight: 800,
                           color: row.directionColor,
@@ -535,36 +526,32 @@ export function AlertsKafkaTable({ alerts = [] }) {
                           {row.value} {row.unit}
                         </span>
                         {row.isHigh ? (
-                          <ArrowUp size={14} weight="bold" style={{ color: "#ef4444" }} />
+                          <ArrowUp size={14} weight="bold" style={{ color: "#ef4444", flexShrink: 0 }} />
                         ) : (
-                          <ArrowDown size={14} weight="bold" style={{ color: "#0284c7" }} />
+                          <ArrowDown size={14} weight="bold" style={{ color: "#0284c7", flexShrink: 0 }} />
                         )}
                       </div>
                     </TableCell>
 
-                    {/* Colonne 5 : Statut Badge (Rouge pour HIGH, Bleu pour LOW) */}
-                    <TableCell style={{ padding: "14px 16px" }}>
-                      <Badge
+                    {/* Colonne 5 : Critique (Centre sans cadre : Haut en Rouge, Bas en Bleu) */}
+                    <TableCell style={{ padding: "14px 16px", textAlign: "center" }}>
+                      <span
                         style={{
-                          backgroundColor: `${row.directionColor}18`,
                           color: row.directionColor,
-                          border: `1px solid ${row.directionColor}35`,
                           fontWeight: 800,
-                          letterSpacing: "0.03em",
-                          fontSize: "0.72rem",
-                          padding: "3px 9px",
-                          borderRadius: "6px",
-                          whiteSpace: "nowrap"
+                          fontSize: "0.86rem",
+                          fontFamily: "'JetBrains Mono', monospace",
+                          letterSpacing: "0.02em"
                         }}
                       >
                         {row.statusLabel}
-                      </Badge>
+                      </span>
                     </TableCell>
 
-                    {/* Colonne 6 : Horodatage */}
+                    {/* Colonne 6 : Horodatage (Centre) */}
                     <TableCell style={{
                       padding: "14px 16px",
-                      textAlign: "right",
+                      textAlign: "center",
                       fontFamily: "'JetBrains Mono', monospace",
                       color: "var(--azura-text-muted)",
                       fontSize: "0.82rem"
