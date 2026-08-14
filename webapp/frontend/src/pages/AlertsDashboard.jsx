@@ -75,10 +75,10 @@ export default function AlertsDashboard() {
           />
         </div>
 
-        {/* Titre StrokeText Principal Interactif Centré (Contour et Remplissage sobres, 100% harmonisés avec le thème) */}
+        {/* Titre StrokeText Principal Interactif Centre (Contour et Remplissage sobres, 100% harmonises avec le theme) */}
         <div style={{ width: '100%', maxWidth: '780px', display: 'flex', justifyContent: 'center', margin: '0 auto' }}>
           <StrokeText
-            text="Supervision des Dérives & Alertes"
+            text="Supervision des Derives & Alertes"
             strokeColor="var(--azura-text)"
             fillColor="var(--azura-text)"
             strokeWidth={1.2}

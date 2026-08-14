@@ -2,45 +2,46 @@ import React, { useState, useEffect, useRef } from "react";
 import { ShieldCheck, WarningOctagon, Waveform, Radio, ArrowUp, ArrowDown } from "@phosphor-icons/react";
 import { useWebSocket } from "../../hooks/useWebSocket";
 import { RollingTime } from "./RollingTime";
+import { AlertsKafkaTable } from "./AlertsKafkaTable";
 
 // Seuils industriels nominaux conformes aux standards d'exploitation AzurA
 const SENSOR_THRESHOLDS = {
-  temperature:  { min: 5.0,   max: 80.0,  unit: "°C",   label: "Température" },
+  temperature:  { min: 5.0,   max: 80.0,  unit: "°C",   label: "Temperature" },
   vibration:    { min: 0.0,   max: 5.0,   unit: "mm/s", label: "Vibration" },
   pression:     { min: 1.0,   max: 10.0,  unit: "bar",  label: "Pression" },
-  humidite:     { min: 30.0,  max: 70.0,  unit: "%",    label: "Humidité" },
+  humidite:     { min: 30.0,  max: 70.0,  unit: "%",    label: "Humidite" },
   consommation: { min: 100.0, max: 500.0, unit: "kW",   label: "Puissance" },
 };
 
-// Diagnostics explicites orientés métier/opérateur
+// Diagnostics explicites orientes metier/operateur
 const SENSOR_DIAGNOSTICS = {
   CRITICAL_TEMP_HIGH: "Surchauffe Machine",
-  CRITICAL_TEMP_LOW:  "Sous-Température / Risque Gel",
-  CRITICAL_VIB_HIGH:  "Déséquilibre Mécanique",
+  CRITICAL_TEMP_LOW:  "Sous-Temperature / Risque Gel",
+  CRITICAL_VIB_HIGH:  "Desequilibre Mecanique",
   CRITICAL_VIB_LOW:   "Anomalie Capteur Vibration",
   CRITICAL_PRES_HIGH: "Surpression Circuit",
   CRITICAL_PRES_LOW:  "Chute Pression / Fuite",
-  CRITICAL_HUM_HIGH:  "Sur-Humidité / Condensation",
+  CRITICAL_HUM_HIGH:  "Sur-Humidite / Condensation",
   CRITICAL_HUM_LOW:   "Air Trop Sec",
-  CRITICAL_POW_HIGH:  "Surcharge Électrique",
-  CRITICAL_POW_LOW:   "Sous-Charge / Déconnexion",
+  CRITICAL_POW_HIGH:  "Surcharge Electrique",
+  CRITICAL_POW_LOW:   "Sous-Charge / Deconnexion",
 };
 
-// Palette de 8 couleurs distinctes pour identifier chaque capteur (tête de courbe + carte)
-// Exclut formellement : Rouge (réservé dépassement haut), Bleu/Cyan (réservé chute basse), Blanc et Noir
+// Palette de 8 couleurs distinctes pour identifier chaque capteur (tete de courbe + carte)
+// Exclut formellement : Rouge (reserve depassement haut), Bleu/Cyan (reserve chute basse), Blanc et Noir
 const SENSOR_ID_COLORS = [
   "#facc15", // 1. Jaune Ambre / Or Vif
-  "#c084fc", // 2. Violet Néon / Pourpre
-  "#34d399", // 3. Vert Émeraude / Menthe
+  "#c084fc", // 2. Violet Neon / Pourpre
+  "#34d399", // 3. Vert Emeraude / Menthe
   "#fb923c", // 4. Orange Vif / Mandarine
   "#f472b6", // 5. Rose Magenta Flash
-  "#a3e635", // 6. Vert Lime Acidulé
+  "#a3e635", // 6. Vert Lime Acidule
   "#e879f9", // 7. Fuchsia Lumineux
-  "#fdba74", // 8. Pêche Électrique
+  "#fdba74", // 8. Peche Electrique
 ];
 
 /**
- * Calcule l'indice de gravité (Severity & Deviation Index) en % de dépassement au-delà du seuil critique
+ * Calcule l'indice de gravite (Severity & Deviation Index) en % de depassement au-dela du seuil critique
  */
 function calculateSeverityIndex(value, deviceType) {
   const t = SENSOR_THRESHOLDS[deviceType] || { min: 0, max: 100 };
@@ -51,7 +52,7 @@ function calculateSeverityIndex(value, deviceType) {
     return {
       severity: Math.max(1, deviation),
       direction: "HIGH",
-      directionColor: "#ef4444", // Rouge pour Dépassement Haut
+      directionColor: "#ef4444", // Rouge pour Depassement Haut
       badge: "HAUT",
       thresholdVal: t.max
     };
@@ -78,9 +79,10 @@ function calculateSeverityIndex(value, deviceType) {
 export function RealTimeAnalytics() {
   const { lastMessage, isConnected } = useWebSocket("/ws/alerts");
   
-  // Dictionnaire des séries télémétriques par capteur
   const [sensorSeries, setSensorSeries] = useState({});
-  // Horodatage réel courant pour l'axe X glissant (mise à jour chaque 1s)
+  const [rawAlerts, setRawAlerts] = useState([]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  // Horodatage reel courant pour l'axe X glissant (mise a jour chaque 1s)
   const [currentTime, setCurrentTime] = useState(Date.now());
   const [hoveredData, setHoveredData] = useState(null);
   const svgRef = useRef(null);
@@ -89,7 +91,7 @@ export function RealTimeAnalytics() {
   const height = 330;
   const padding = { top: 35, right: 40, bottom: 50, left: 105 };
 
-  // Horloge temps réel continue : fait avancer l'axe X chaque seconde
+  // Horloge temps reel continue : fait avancer l'axe X chaque seconde
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentTime(Date.now());
@@ -100,6 +102,20 @@ export function RealTimeAnalytics() {
   // Fonction d'ajout et de synchronisation des alertes
   const processAlertsBatch = (alerts) => {
     if (!Array.isArray(alerts) || alerts.length === 0) return;
+
+    setRawAlerts((prev) => {
+      const combined = [...alerts, ...prev];
+      const unique = [];
+      const seen = new Set();
+      for (const item of combined) {
+        const key = `${item.device_id}-${item.timestamp}-${item.value}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          unique.push(item);
+        }
+      }
+      return unique.slice(0, 50);
+    });
 
     setSensorSeries((prev) => {
       const updated = { ...prev };
@@ -113,11 +129,11 @@ export function RealTimeAnalytics() {
         const devType = alert.device_type || "temperature";
         const status = alert.status || "ANOMALY";
         const unit = alert.unit || (SENSOR_THRESHOLDS[devType] ? SENSOR_THRESHOLDS[devType].unit : "");
-        const location = alert.location || "AzurA Site";
+        const location = alert.location || "Site AzurA";
 
-        // Calcul de la gravité
+        // Calcul de la gravite
         const sevInfo = calculateSeverityIndex(val, devType);
-        const diagnostic = SENSOR_DIAGNOSTICS[status] || "Dérive Opérationnelle";
+        const diagnostic = SENSOR_DIAGNOSTICS[status] || "Derive Operationnelle";
 
         // Conversion horodatage
         const timeMs = alert.timestamp ? new Date(alert.timestamp).getTime() : now;
@@ -138,7 +154,7 @@ export function RealTimeAnalytics() {
         }
 
         const pts = updated[devId].points;
-        // Évite les doublons stricts sur la même seconde
+        // Evite les doublons stricts sur la meme seconde
         const exists = pts.some(p => Math.abs(p.time - timeMs) < 600);
         if (!exists) {
           pts.push({
@@ -171,8 +187,10 @@ export function RealTimeAnalytics() {
     });
   };
 
-  // Synchronisation continue (Polling régulier pour garantir la persistance des données)
-  const syncLatestAlerts = () => {
+  // Synchronisation manuelle ou automatique (Live Refresh sans recharger la page)
+  const syncLatestAlerts = (isManual = false) => {
+    if (isManual) setIsRefreshing(true);
+
     fetch("/api/stats/recent-alerts")
       .then((res) => res.json())
       .then((data) => {
@@ -180,16 +198,21 @@ export function RealTimeAnalytics() {
           processAlertsBatch(data.alerts);
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        if (isManual) {
+          setTimeout(() => setIsRefreshing(false), 600);
+        }
+      });
   };
 
   useEffect(() => {
-    syncLatestAlerts();
-    const interval = setInterval(syncLatestAlerts, 3000);
+    syncLatestAlerts(false);
+    const interval = setInterval(() => syncLatestAlerts(false), 3000);
     return () => clearInterval(interval);
   }, []);
 
-  // Réception en direct par flux continu (sub-seconde)
+  // Reception en direct par flux continu (sub-seconde)
   useEffect(() => {
     if (!lastMessage) return;
 
@@ -200,20 +223,20 @@ export function RealTimeAnalytics() {
     }
   }, [lastMessage]);
 
-  // Fenêtre glissante de temps réel : 2 minutes visibles à l'écran
+  // Fenetre glissante de temps reel : 2 minutes visibles a l'ecran
   const windowDurationMs = 120000;
   const minTime = currentTime - windowDurationMs;
   const maxTime = currentTime + 4000;
   const timeRange = maxTime - minTime;
 
-  // Capteurs actifs ayant émis une alerte dans les 60 dernières secondes
-  // Triés par device_id pour assurer une attribution de couleur stable et 100% DISTINCTE (zéro collision)
+  // Capteurs actifs ayant emis une alerte dans les 60 dernieres secondes
+  // Tries par device_id pour assurer une attribution de couleur stable et 100% DISTINCTE (zero collision)
   const rawActive = Object.values(sensorSeries).filter((s) => {
     return s.points.some((p) => p.time >= currentTime - 60000);
   });
   rawActive.sort((a, b) => (a.device_id || "").localeCompare(b.device_id || ""));
 
-  // Attribution d'une couleur UNIQUE garantie sans collision à chaque capteur actif
+  // Attribution d'une couleur UNIQUE garantie sans collision a chaque capteur actif
   const activeSensors = rawActive.map((sensor, idx) => {
     const assignedColor = SENSOR_ID_COLORS[idx % SENSOR_ID_COLORS.length];
     return {
@@ -231,7 +254,7 @@ export function RealTimeAnalytics() {
     return padding.left + ((time - minTime) / timeRange) * (width - padding.left - padding.right);
   };
 
-  // Échelle Y de Gravité : de 0% (seuil d'alerte) à 60%+ (dépassement extrême)
+  // Echelle Y de Gravite : de 0% (seuil d'alerte) a 60%+ (depassement extreme)
   const maxObservedSeverity = Math.max(35, ...activeSensors.flatMap(s => s.points.map(p => p.severity)));
   const yMaxGravity = Math.ceil(maxObservedSeverity / 10) * 10 + 5;
 
@@ -241,19 +264,19 @@ export function RealTimeAnalytics() {
     return padding.top + (1 - ratio) * (height - padding.top - padding.bottom);
   };
 
-  // Horodatages gradués sur l'Axe X (HH:mm:ss rafraîchis en continu chaque seconde)
+  // Horodatages gradués sur l'Axe X (HH:mm:ss rafraichis en continu chaque seconde)
   const timeTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
     const t = minTime + ratio * (maxTime - minTime);
     const timeStr = new Date(t).toLocaleTimeString('fr-FR', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
     return { time: t, label: timeStr, x: getX(t) };
   });
 
-  // Graduations de l'Axe Y de Gravité
+  // Graduations de l'Axe Y de Gravite
   const step = yMaxGravity / 4;
   const yTicks = [
     { val: yMaxGravity, label: `+${yMaxGravity.toFixed(0)}% (Critique)` },
-    { val: step * 3,    label: `+${(step * 3).toFixed(0)}% (Élevé)` },
-    { val: step * 2,    label: `+${(step * 2).toFixed(0)}% (Modéré)` },
+    { val: step * 3,    label: `+${(step * 3).toFixed(0)}% (Eleve)` },
+    { val: step * 2,    label: `+${(step * 2).toFixed(0)}% (Modere)` },
     { val: step,        label: `+${step.toFixed(0)}% (Faible)` },
     { val: 0,           label: `0% [Seuil]` },
   ];
@@ -261,7 +284,7 @@ export function RealTimeAnalytics() {
   // Points visibles pour l'infobulle interactif
   const visiblePoints = activeSensors.flatMap((s) => s.points.filter((p) => p.time >= minTime && p.time <= maxTime));
 
-  // Pointage 2D de haute précision : trouve le point le plus proche selon X ET Y
+  // Pointage 2D de haute precision : trouve le point le plus proche selon X ET Y
   const handleMouseMove = (e) => {
     if (!svgRef.current || visiblePoints.length === 0) return;
     const rect = svgRef.current.getBoundingClientRect();
@@ -290,7 +313,7 @@ export function RealTimeAnalytics() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-      {/* Panneau Principal du Graphique Télémétrique */}
+      {/* Panneau Principal du Graphique Telemetrique */}
       <div style={{
         backgroundColor: "var(--azura-card-bg)",
         border: "1px solid var(--azura-border)",
@@ -298,7 +321,7 @@ export function RealTimeAnalytics() {
         padding: "24px",
         boxShadow: "0 10px 30px rgba(0,0,0,0.04)"
       }}>
-        {/* Entête du Graphique : Titre Centré & Épuré */}
+        {/* Entete du Graphique : Titre Centre & Epure */}
         <div style={{
           display: "flex",
           flexDirection: "column",
@@ -316,7 +339,7 @@ export function RealTimeAnalytics() {
             borderRadius: "9999px",
             backgroundColor: "rgba(255, 255, 255, 0.02)",
           }}>
-            {/* Icône Vintage & Moderne (Waveform Oscilloscope Télémétrique) */}
+            {/* Icone Vintage & Moderne (Waveform Oscilloscope Telemetrique) */}
             <Waveform size={24} weight="bold" style={{ color: "var(--azura-accent-red)", filter: "drop-shadow(0 0 8px rgba(239, 68, 68, 0.45))" }} />
             <h2 style={{
               fontSize: "1.25rem",
@@ -326,7 +349,7 @@ export function RealTimeAnalytics() {
               letterSpacing: "-0.02em",
               fontFamily: "'Plus Jakarta Sans', sans-serif"
             }}>
-              Dynamique des Dérives d'Anomalies
+              Dynamique des Derives d'Anomalies
             </h2>
           </div>
         </div>
@@ -343,14 +366,14 @@ export function RealTimeAnalytics() {
             style={{ overflow: "visible", cursor: "crosshair" }}
           >
             <defs>
-              {/* Dégradé vertical d'intensité */}
+              {/* Degrade vertical d'intensite */}
               <linearGradient id="alertZoneGrad" x1="0%" y1="100%" x2="0%" y2="0%">
                 <stop offset="0%" stopColor="#22c55e" stopOpacity="0.02" />
                 <stop offset="50%" stopColor="#f59e0b" stopOpacity="0.06" />
                 <stop offset="100%" stopColor="#ef4444" stopOpacity="0.12" />
               </linearGradient>
 
-              {/* MASQUE DE DÉCOUPE STRICT : Empêche tout débordement sur l'axe Y à gauche */}
+              {/* MASQUE DE DECOUPE STRICT : Empêche tout debordement sur l'axe Y a gauche */}
               <clipPath id="chartPlotAreaClip">
                 <rect
                   x={padding.left}
@@ -361,7 +384,7 @@ export function RealTimeAnalytics() {
               </clipPath>
             </defs>
 
-            {/* Zone d'Arrière-Plan */}
+            {/* Zone d'Arriere-Plan */}
             <rect
               x={padding.left}
               y={padding.top}
@@ -407,7 +430,7 @@ export function RealTimeAnalytics() {
               );
             })}
 
-            {/* Axe X des Abscisses : Horodatages Temps Réel Continu (HH:mm:ss) */}
+            {/* Axe X des Abscisses : Horodatages Temps Reel Continu (HH:mm:ss) */}
             {timeTicks.map((tick, idx) => (
               <g key={idx}>
                 <line
@@ -442,14 +465,14 @@ export function RealTimeAnalytics() {
               strokeWidth="1.5"
             />
 
-            {/* Tracé des courbes de dérive (Clip Path Strict) */}
+            {/* Trace des courbes de derive (Clip Path Strict) */}
             {activeCount === 0 ? (
               <g transform={`translate(${padding.left + (width - padding.left - padding.right) / 2}, ${padding.top + (height - padding.top - padding.bottom) / 2})`}>
                 {/* Pastille Lumineuse Verte avec Halo */}
                 <circle cx="-160" cy="0" r="5" fill="#22c55e" />
                 <circle cx="-160" cy="0" r="9" fill="#22c55e" opacity="0.25" />
                 
-                {/* Texte Centré Proprement Sans Fond Vert */}
+                {/* Texte Centre Proprement Sans Fond Vert */}
                 <text
                   x="-142"
                   y="4"
@@ -459,7 +482,7 @@ export function RealTimeAnalytics() {
                   textAnchor="start"
                   letterSpacing="0.02em"
                 >
-                  Système AzurA Nominal — Aucun dépassement de seuil
+                  Systeme AzurA Nominal — Aucun depassement de seuil
                 </text>
               </g>
             ) : (
@@ -503,7 +526,7 @@ export function RealTimeAnalytics() {
               </g>
             )}
 
-            {/* Têtes de Courbes Colorées 100% DISTINCTES par Capteur */}
+            {/* Tetes de Courbes Colorees 100% DISTINCTES par Capteur */}
             {activeSensors.map((series) => {
               const pts = series.points;
               if (pts.length === 0) return null;
@@ -540,7 +563,7 @@ export function RealTimeAnalytics() {
               );
             })}
 
-            {/* Réticule de Survol (Hover Crosshair) */}
+            {/* Reticule de Survol (Hover Crosshair) */}
             {hoveredData && (
               <g style={{ pointerEvents: "none" }}>
                 <line
@@ -565,7 +588,7 @@ export function RealTimeAnalytics() {
             )}
           </svg>
 
-          {/* Infobulle de Survol Épurée et Professionnelle (Sans icônes, Design Télémétrique Compact) */}
+          {/* Infobulle de Survol Epuree et Professionnelle (Sans icones, Design Telemetrique Compact) */}
           {hoveredData && (
             <div
               style={{
@@ -610,12 +633,12 @@ export function RealTimeAnalytics() {
                 </span>
               </div>
 
-              {/* Ligne 2 : Valeur Mesurée */}
+              {/* Ligne 2 : Valeur Mesuree */}
               <div style={{ fontSize: "1.15rem", fontWeight: 800, color: hoveredData.uniqueColor, lineHeight: 1.1 }}>
                 {hoveredData.value} {hoveredData.unit}
               </div>
 
-              {/* Ligne 3 : Métriques Résumées & Horodatage */}
+              {/* Ligne 3 : Metriques Resumees & Horodatage */}
               <div style={{
                 display: "flex",
                 justifyContent: "space-between",
@@ -625,7 +648,7 @@ export function RealTimeAnalytics() {
                 borderTop: "1px solid var(--azura-border)"
               }}>
                 <span style={{ fontSize: "0.72rem", fontWeight: 700, color: hoveredData.directionColor }}>
-                  Dérive: +{hoveredData.severity.toFixed(1)}%
+                  Derive: +{hoveredData.severity.toFixed(1)}%
                 </span>
                 <span style={{ fontSize: "0.7rem", color: "var(--azura-text-muted)", fontFamily: "monospace" }}>
                   {new Date(hoveredData.time).toLocaleTimeString()}
@@ -635,7 +658,7 @@ export function RealTimeAnalytics() {
           )}
         </div>
 
-        {/* Barre Inférieure de Contrôles & Statuts Intégrée au Cadre */}
+        {/* Barre Inferieure de Controles & Statuts Integree au Cadre */}
         <div style={{
           display: "flex",
           justifyContent: "space-between",
@@ -646,7 +669,7 @@ export function RealTimeAnalytics() {
           flexWrap: "wrap",
           gap: "12px"
         }}>
-          {/* Groupe de Boutons Télémétriques Haut de Gamme */}
+          {/* Groupe de Boutons Telemetriques Haut de Gamme */}
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             {/* 1. Bouton Statut Flux Continu */}
             <div style={{
@@ -678,7 +701,7 @@ export function RealTimeAnalytics() {
               </span>
             </div>
 
-            {/* 2. Bouton Décompte Incidents Actifs */}
+            {/* 2. Bouton Decompte Incidents Actifs */}
             <div style={{
               display: "inline-flex",
               alignItems: "center",
@@ -702,7 +725,7 @@ export function RealTimeAnalytics() {
                 letterSpacing: "0.01em",
                 fontFamily: "'Plus Jakarta Sans', sans-serif"
               }}>
-                {activeCount === 0 ? "Aucune Dérive Détectée" : activeCount === 1 ? "1 Incident en Cours" : `${activeCount} Incidents en Cours`}
+                {activeCount === 0 ? "Aucune Derive Detectee" : activeCount === 1 ? "1 Incident en Cours" : `${activeCount} Incidents en Cours`}
               </span>
             </div>
           </div>
@@ -723,7 +746,7 @@ export function RealTimeAnalytics() {
               fontWeight: 600,
               fontFamily: "'Plus Jakarta Sans', sans-serif"
             }}>
-              Dernière mise à jour :
+              Derniere mise a jour :
             </span>
             <RollingTime
               timestamp={currentTime}
@@ -738,19 +761,45 @@ export function RealTimeAnalytics() {
         </div>
       </div>
 
-      {/* Grille des Fiches de Triage des Incidents Actifs */}
+      {/* Carte des Equipements en Derive Critique */}
       {activeCount > 0 && (
-        <div>
+        <div style={{
+          backgroundColor: "var(--azura-card-bg)",
+          border: "1px solid var(--azura-border)",
+          borderRadius: "18px",
+          padding: "24px",
+          boxShadow: "0 10px 30px rgba(0,0,0,0.04)"
+        }}>
+          {/* Entete du Graphique : Titre Centre & Epure */}
           <div style={{
             display: "flex",
-            justifyContent: "space-between",
+            flexDirection: "column",
             alignItems: "center",
-            marginBottom: "12px",
-            padding: "0 4px"
+            justifyContent: "center",
+            textAlign: "center",
+            marginBottom: "24px",
+            gap: "6px"
           }}>
-            <h3 style={{ fontSize: "1.05rem", fontWeight: 800, color: "var(--azura-text)", margin: 0 }}>
-              Équipements en Dérive Critique ({activeCount})
-            </h3>
+            <div style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "10px",
+              padding: "4px 16px",
+              borderRadius: "9999px",
+              backgroundColor: "rgba(239, 68, 68, 0.08)",
+            }}>
+              <WarningOctagon size={24} weight="bold" style={{ color: "#ef4444", filter: "drop-shadow(0 0 8px rgba(239, 68, 68, 0.45))" }} />
+              <h2 style={{
+                fontSize: "1.25rem",
+                fontWeight: 800,
+                color: "var(--azura-text)",
+                margin: 0,
+                letterSpacing: "-0.02em",
+                fontFamily: "'Plus Jakarta Sans', sans-serif"
+              }}>
+                Equipements en Derive Critique ({activeCount})
+              </h2>
+            </div>
           </div>
 
           <div style={{
@@ -814,7 +863,7 @@ export function RealTimeAnalytics() {
                     </div>
                   </div>
 
-                  {/* Ligne 3 : Valeur Réelle + Jauge de Dérive */}
+                  {/* Ligne 3 : Valeur Reelle + Jauge de Derive */}
                   <div>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "6px" }}>
                       <span style={{ fontSize: "1.35rem", fontWeight: 800, color: "var(--azura-text)", fontFamily: "'JetBrains Mono', monospace" }}>
@@ -834,7 +883,7 @@ export function RealTimeAnalytics() {
                       </div>
                     </div>
 
-                    {/* Micro Barre de Progression de Gravité */}
+                    {/* Micro Barre de Progression de Gravite */}
                     <div style={{
                       width: "100%",
                       height: "4px",
@@ -857,6 +906,13 @@ export function RealTimeAnalytics() {
           </div>
         </div>
       )}
+
+      {/* Tableau Deroulant & Selectionnable des 10 Dernieres Alertes Kafka (Shadcn + TanStack) */}
+      <AlertsKafkaTable
+        alerts={rawAlerts}
+        onRefresh={() => syncLatestAlerts(true)}
+        isRefreshing={isRefreshing}
+      />
     </div>
   );
 }
