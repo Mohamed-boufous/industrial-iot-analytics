@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { ShieldCheck, WarningOctagon, Pulse, ArrowUp, ArrowDown } from "@phosphor-icons/react";
 import { useWebSocket } from "../../hooks/useWebSocket";
+import { RollingTime } from "./RollingTime";
 
 // Seuils industriels nominaux conformes aux standards d'exploitation AzurA
 const SENSOR_THRESHOLDS = {
@@ -677,8 +678,9 @@ export function RealTimeAnalytics() {
             <h3 style={{ fontSize: "1.05rem", fontWeight: 800, color: "var(--azura-text)", margin: 0 }}>
               Équipements en Dérive Critique ({activeCount})
             </h3>
-            <span style={{ fontSize: "0.8rem", color: "var(--azura-text-muted)" }}>
-              Dernière mise à jour : {new Date(currentTime).toLocaleTimeString()}
+            <span style={{ fontSize: "0.8rem", color: "var(--azura-text-muted)", display: "inline-flex", alignItems: "center", gap: "6px" }}>
+              <span>Dernière mise à jour :</span>
+              <RollingTime timestamp={currentTime} style={{ color: "var(--azura-text)", fontWeight: 700 }} />
             </span>
           </div>
 
@@ -746,8 +748,8 @@ export function RealTimeAnalytics() {
                   {/* Ligne 3 : Valeur Réelle + Jauge de Dérive */}
                   <div>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "6px" }}>
-                      <span style={{ fontSize: "1.35rem", fontWeight: 800, color: "var(--azura-text)" }}>
-                        {lastPt ? lastPt.value : 0} <span style={{ fontSize: "0.9rem", color: "var(--azura-text-muted)" }}>{series.unit}</span>
+                      <span style={{ fontSize: "1.35rem", fontWeight: 800, color: "var(--azura-text)", fontFamily: "'JetBrains Mono', monospace" }}>
+                        {lastPt ? lastPt.value : 0} <span style={{ fontSize: "0.9rem", color: "var(--azura-text-muted)", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>{series.unit}</span>
                       </span>
 
                       <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
