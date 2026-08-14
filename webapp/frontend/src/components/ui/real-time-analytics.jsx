@@ -3,6 +3,7 @@ import { ShieldCheck, WarningOctagon, Waveform, Radio, ArrowUp, ArrowDown } from
 import { useWebSocket } from "../../hooks/useWebSocket";
 import { RollingTime } from "./RollingTime";
 import { AlertsKafkaTable } from "./AlertsKafkaTable";
+import { MetalButton } from "./metal-button";
 
 // Seuils industriels nominaux conformes aux standards d'exploitation AzurA
 const SENSOR_THRESHOLDS = {
@@ -669,65 +670,79 @@ export function RealTimeAnalytics() {
           flexWrap: "wrap",
           gap: "12px"
         }}>
-          {/* Groupe de Boutons Telemetriques Haut de Gamme */}
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            {/* 1. Bouton Statut Flux Continu */}
-            <div style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "8px",
-              padding: "6px 14px",
-              backgroundColor: isConnected ? "rgba(34, 197, 94, 0.08)" : "rgba(239, 68, 68, 0.08)",
-              border: `1px solid ${isConnected ? "rgba(34, 197, 94, 0.28)" : "rgba(239, 68, 68, 0.28)"}`,
-              borderRadius: "8px",
-              boxShadow: isConnected ? "0 2px 8px rgba(34, 197, 94, 0.1)" : "none",
-              transition: "all 0.2s ease"
-            }}>
-              <span style={{
-                width: "8px",
-                height: "8px",
-                borderRadius: "50%",
-                backgroundColor: isConnected ? "#22c55e" : "#ef4444",
-                boxShadow: isConnected ? "0 0 8px #22c55e" : "none"
-              }} />
-              <span style={{
-                color: isConnected ? "#22c55e" : "#ef4444",
-                fontSize: "0.8125rem",
-                fontWeight: 700,
-                letterSpacing: "0.01em",
-                fontFamily: "'Plus Jakarta Sans', sans-serif"
-              }}>
-                {isConnected ? "Flux Continu" : "Connexion..."}
-              </span>
-            </div>
+          {/* Groupe de Boutons Telemetriques Haut de Gamme avec Shader Liquid Metal */}
+          <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+            {/* 1. Bouton Statut Flux Continu MetalButton */}
+            <MetalButton
+              preset="silver"
+              variant="outline"
+              strength={1.0}
+              ringCssPx={4.0}
+              shaderScale={1.8}
+              borderRadius={14}
+              className="!py-3.5 !px-8 border-0 bg-transparent"
+              style={{ padding: "12px 28px" }}
+              metalFxStyle={{
+                backgroundColor: isConnected ? "rgba(34, 197, 94, 0.16)" : "rgba(239, 68, 68, 0.16)",
+                border: `1px solid ${isConnected ? "rgba(34, 197, 94, 0.5)" : "rgba(239, 68, 68, 0.5)"}`,
+                borderRadius: "14px",
+                boxShadow: isConnected ? "0 4px 18px rgba(34, 197, 94, 0.22)" : "none"
+              }}
+            >
+              <div style={{ display: "inline-flex", alignItems: "center", gap: "12px" }}>
+                <span style={{
+                  width: "9px",
+                  height: "9px",
+                  borderRadius: "50%",
+                  backgroundColor: isConnected ? "#22c55e" : "#ef4444",
+                  boxShadow: isConnected ? "0 0 10px #22c55e" : "none"
+                }} />
+                <span style={{
+                  color: isConnected ? "#22c55e" : "#ef4444",
+                  fontSize: "0.875rem",
+                  fontWeight: 800,
+                  letterSpacing: "0.01em",
+                  fontFamily: "'Plus Jakarta Sans', sans-serif"
+                }}>
+                  {isConnected ? "Flux Continu" : "Connexion..."}
+                </span>
+              </div>
+            </MetalButton>
 
-            {/* 2. Bouton Decompte Incidents Actifs */}
-            <div style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "8px",
-              padding: "6px 16px",
-              backgroundColor: activeCount > 0 ? "rgba(239, 68, 68, 0.08)" : "rgba(34, 197, 94, 0.08)",
-              border: `1px solid ${activeCount > 0 ? "rgba(239, 68, 68, 0.3)" : "rgba(34, 197, 94, 0.28)"}`,
-              borderRadius: "8px",
-              boxShadow: activeCount > 0 ? "0 2px 10px rgba(239, 68, 68, 0.12)" : "0 2px 8px rgba(34, 197, 94, 0.1)",
-              transition: "all 0.2s ease"
-            }}>
-              {activeCount > 0 ? (
-                <WarningOctagon size={18} weight="fill" style={{ color: "#ef4444" }} />
-              ) : (
-                <ShieldCheck size={18} weight="fill" style={{ color: "#22c55e" }} />
-              )}
-              <span style={{
-                fontSize: "0.8125rem",
-                fontWeight: 800,
-                color: activeCount > 0 ? "#ef4444" : "#22c55e",
-                letterSpacing: "0.01em",
-                fontFamily: "'Plus Jakarta Sans', sans-serif"
-              }}>
-                {activeCount === 0 ? "Aucune Derive Detectee" : activeCount === 1 ? "1 Incident en Cours" : `${activeCount} Incidents en Cours`}
-              </span>
-            </div>
+            {/* 2. Bouton Decompte Incidents Actifs MetalButton */}
+            <MetalButton
+              preset={activeCount > 0 ? "gold" : "chromatic"}
+              variant="outline"
+              strength={1.0}
+              ringCssPx={4.0}
+              shaderScale={1.8}
+              borderRadius={14}
+              className="!py-3.5 !px-8 border-0 bg-transparent"
+              style={{ padding: "12px 28px" }}
+              metalFxStyle={{
+                backgroundColor: activeCount > 0 ? "rgba(239, 68, 68, 0.16)" : "rgba(34, 197, 94, 0.16)",
+                border: `1px solid ${activeCount > 0 ? "rgba(239, 68, 68, 0.5)" : "rgba(34, 197, 94, 0.5)"}`,
+                borderRadius: "14px",
+                boxShadow: activeCount > 0 ? "0 4px 20px rgba(239, 68, 68, 0.25)" : "0 4px 16px rgba(34, 197, 94, 0.18)"
+              }}
+            >
+              <div style={{ display: "inline-flex", alignItems: "center", gap: "12px" }}>
+                {activeCount > 0 ? (
+                  <WarningOctagon size={20} weight="fill" style={{ color: "#ef4444" }} />
+                ) : (
+                  <ShieldCheck size={20} weight="fill" style={{ color: "#22c55e" }} />
+                )}
+                <span style={{
+                  fontSize: "0.875rem",
+                  fontWeight: 800,
+                  color: activeCount > 0 ? "#ef4444" : "#22c55e",
+                  letterSpacing: "0.01em",
+                  fontFamily: "'Plus Jakarta Sans', sans-serif"
+                }}>
+                  {activeCount === 0 ? "Aucune Derive Detectee" : activeCount === 1 ? "1 Incident en Cours" : `${activeCount} Incidents en Cours`}
+                </span>
+              </div>
+            </MetalButton>
           </div>
 
           {/* 3. Horodatage Dynamique avec Rolling Time */}
