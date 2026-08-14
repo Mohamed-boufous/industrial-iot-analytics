@@ -8,9 +8,9 @@
   --azura-text-muted: #737373;
   --azura-border: #E5E5E5;
   
-  /* Top & Bottom Bar Glassmorphism Light */
-  --navbar-bg: rgba(255, 255, 255, 0.85);
-  --navbar-border: rgba(229, 229, 229, 0.8);
+  /* Top Bar 100% Opaque Light */
+  --navbar-bg: #FFFFFF;
+  --navbar-border: #E5E5E5;
   --navbar-text: #000000;
   --nav-link-hover: rgba(0, 0, 0, 0.05);
   --nav-link-active: #000000;
@@ -49,9 +49,9 @@ html.dark {
   --azura-text-muted: #A3A3A3;
   --azura-border: #262626;
 
-  /* Top & Bottom Bar Glassmorphism Dark */
-  --navbar-bg: rgba(0, 0, 0, 0.85);
-  --navbar-border: rgba(38, 38, 38, 0.8);
+  /* Top Bar 100% Opaque Dark */
+  --navbar-bg: #000000;
+  --navbar-border: #262626;
   --navbar-text: #FFFFFF;
   --nav-link-hover: rgba(255, 255, 255, 0.1);
   --nav-link-active: #FFFFFF;
@@ -128,13 +128,13 @@ body {
 /* --- TOP HEADER (GOUVERNANCE GAUCHE - CENTRE - DROITE) --- */
 .top-header {
   background-color: var(--navbar-bg);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   border-bottom: 1px solid var(--navbar-border);
   position: sticky;
   top: 0;
   z-index: 900;
-  transition: background-color 0.3s ease, border-color 0.3s ease;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
 }
 
 .top-header-container {
