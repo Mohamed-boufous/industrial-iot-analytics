@@ -1,73 +1,98 @@
 import React from 'react';
 import { RealTimeAnalytics } from '../components/ui/real-time-analytics';
-import WarpText from '../components/ui/WarpText';
+import StrokeText from '../components/ui/StrokeText';
 
 export default function AlertsDashboard() {
   return (
     <div style={{ maxWidth: '1440px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-      {/* Entête avec Titre Interactif WebGL WarpText */}
+      {/* Entête avec Titre Tracé Animé GSAP StrokeText Centré */}
       <div style={{
         display: 'flex',
-        justifyContent: 'space-between',
+        flexDirection: 'column',
         alignItems: 'center',
-        flexWrap: 'wrap',
-        gap: '1rem',
-        padding: '4px 2px'
+        justifyContent: 'center',
+        textAlign: 'center',
+        padding: '12px 0 6px 0',
+        width: '100%'
       }}>
-        <div style={{ width: '100%', maxWidth: '750px' }}>
-          {/* Badge Catégorie Minimaliste */}
-          <div style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '6px',
-            padding: '3px 10px',
-            borderRadius: '9999px',
-            backgroundColor: 'rgba(239, 68, 68, 0.08)',
-            border: '1px solid rgba(239, 68, 68, 0.2)',
-            marginBottom: '0.5rem'
+        {/* Badge Catégorie Créatif avec Animation StrokeText */}
+        <div style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '5px 18px',
+          borderRadius: '9999px',
+          backgroundColor: 'rgba(239, 68, 68, 0.08)',
+          border: '1px solid rgba(239, 68, 68, 0.25)',
+          boxShadow: '0 0 16px rgba(239, 68, 68, 0.12)',
+          marginBottom: '0.75rem',
+          backdropFilter: 'blur(8px)',
+          transition: 'all 0.3s ease'
+        }}>
+          {/* Point Pulse indicateur */}
+          <span style={{
+            position: 'relative',
+            display: 'flex',
+            width: '8px',
+            height: '8px'
           }}>
             <span style={{
-              width: '6px',
-              height: '6px',
+              position: 'absolute',
+              width: '100%',
+              height: '100%',
               borderRadius: '50%',
               backgroundColor: 'var(--azura-accent-red)',
-              boxShadow: '0 0 6px var(--azura-accent-red)'
+              opacity: 0.75,
+              animation: 'ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite'
             }} />
             <span style={{
-              fontSize: '0.68rem',
-              fontWeight: 800,
-              letterSpacing: '0.08em',
-              textTransform: 'uppercase',
-              color: 'var(--azura-accent-red)'
-            }}>
-              Centre d'Incidents
-            </span>
-          </div>
+              position: 'relative',
+              display: 'inline-flex',
+              borderRadius: '50%',
+              width: '8px',
+              height: '8px',
+              backgroundColor: 'var(--azura-accent-red)',
+              boxShadow: '0 0 8px var(--azura-accent-red)'
+            }} />
+          </span>
 
-          {/* Titre WarpText Interactif ReactBits */}
-          <WarpText
-            text="Supervision des Dérives & Alertes"
-            color="var(--azura-text)"
-            warpStrength={0.06}
-            warpScale={1.5}
-            speed={0.45}
-            pointerInfluence={0.38}
-            pointerStrength={0.32}
-            refraction={0.015}
-            ripple
-            fontSize="clamp(1.5rem, 3vw, 2.2rem)"
+          {/* Texte animé StrokeText pour Centre d'Incidents */}
+          <StrokeText
+            text="CENTRE D'INCIDENTS"
+            strokeColor="var(--azura-accent-red)"
+            fillColor="var(--azura-accent-red)"
+            strokeWidth={1.0}
+            drawDuration={1.2}
+            fillDelay={0.15}
+            stagger={0.03}
+            ease="power2.out"
+            trigger="mount"
+            fillMode="wipe"
+            fontSize={12}
             fontWeight={800}
-            style={{ height: '52px', width: '100%' }}
+            letterSpacing={1.2}
+            style={{ display: 'inline-flex', width: 'auto' }}
           />
+        </div>
 
-          <p style={{
-            color: 'var(--azura-text-muted)',
-            fontSize: '0.875rem',
-            marginTop: '0.25rem',
-            margin: 0
-          }}>
-            Surveillance continue des seuils critiques sur les lignes de production AzurA.
-          </p>
+        {/* Titre StrokeText Principal Interactif Centré (Contour et Remplissage sobres, 100% harmonisés avec le thème) */}
+        <div style={{ width: '100%', maxWidth: '780px', display: 'flex', justifyContent: 'center', margin: '0 auto' }}>
+          <StrokeText
+            text="Supervision des Dérives & Alertes"
+            strokeColor="var(--azura-text)"
+            fillColor="var(--azura-text)"
+            strokeWidth={1.2}
+            drawDuration={1.6}
+            fillDelay={0.2}
+            stagger={0.04}
+            ease="power2.out"
+            trigger="mount"
+            fillMode="wipe"
+            fontSize={36}
+            fontWeight={800}
+            letterSpacing={-1}
+            style={{ width: '100%' }}
+          />
         </div>
       </div>
 
