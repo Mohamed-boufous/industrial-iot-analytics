@@ -1,6 +1,7 @@
 import json
 import threading
 import time
+from collections import defaultdict, deque
 from confluent_kafka import Consumer, KafkaError
 from config import settings
 
@@ -13,6 +14,7 @@ class KafkaConsumerService:
         self.running = False
         self.thread = None
         self.latest_sensors = {}  # Dict {device_id: dernier_message_json}
+        self.sensors_history = defaultdict(lambda: deque(maxlen=60)) # Buffer glissant de 60 mesures par capteur
         self.recent_alerts = []   # Liste des 50 dernières alertes
         self.websocket_listeners = set() # Listeners enregistrés (WebSockets)
 
@@ -70,6 +72,7 @@ class KafkaConsumerService:
                     device_id = payload.get("device_id")
                     if device_id:
                         self.latest_sensors[device_id] = payload
+                        self.sensors_history[device_id].append(payload)
 
                 elif topic == settings.KAFKA_TOPIC_ALERTS:
                     self.recent_alerts.insert(0, payload)

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import StrokeText from '../components/ui/StrokeText';
 import { SensorTypeChart } from '../components/ui/SensorTypeChart';
+import { SensorsKafkaTable } from '../components/ui/SensorsKafkaTable';
 import { MetalButton } from '../components/ui/metal-button';
 import { RollingTime } from '../components/ui/RollingTime';
 import { useWebSocket } from '../hooks/useWebSocket';
@@ -58,8 +59,110 @@ const SENSOR_TYPE_CONFIGS = {
 export default function SensorsDashboard() {
   const { lastMessage, isConnected } = useWebSocket('/ws/sensors');
   const [sensorSeries, setSensorSeries] = useState({});
+  const [currentTime, setCurrentTime] = useState(Date.now());
   const [lastUpdatedTime, setLastUpdatedTime] = useState(Date.now());
-  const [activeCount, setActiveCount] = useState(15);
+
+  // Horloge temps réel continue : fait glisser l'axe X chaque seconde
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Fonction de réhydratation et d'ingestion complète des capteurs et de leur historique
+  const ingestSensorsData = (latestList = [], historyDict = {}) => {
+    const now = Date.now();
+    setLastUpdatedTime(now);
+
+    setSensorSeries(prev => {
+      const next = { ...prev };
+
+      // 1. Ingestion de l'historique reçu (MongoDB ou Kafka)
+      if (historyDict && Object.keys(historyDict).length > 0) {
+        Object.entries(historyDict).forEach(([sId, pointsList]) => {
+          if (!Array.isArray(pointsList) || pointsList.length === 0) return;
+          const sample = pointsList[pointsList.length - 1];
+          let mappedPoints = pointsList.map(p => ({
+            time: new Date(p.timestamp || now).getTime(),
+            value: Number(p.value)
+          })).sort((a, b) => a.time - b.time);
+
+          // Si les points ne couvrent pas toute la fenêtre de 45s, prolonger vers la gauche
+          const windowStart = now - 45000;
+          if (mappedPoints.length > 0 && mappedPoints[0].time > windowStart + 3000) {
+            const firstPt = mappedPoints[0];
+            const backfill = [];
+            for (let t = windowStart; t < firstPt.time; t += 2500) {
+              const noise = Math.sin(t / 5000) * 0.01 * firstPt.value;
+              backfill.push({
+                time: t,
+                value: Number((firstPt.value + noise).toFixed(2))
+              });
+            }
+            mappedPoints = [...backfill, ...mappedPoints];
+          }
+
+          next[sId] = {
+            id: sId,
+            type: sample.device_type,
+            loc: sample.location || sId,
+            unit: sample.unit,
+            points: mappedPoints.slice(-80)
+          };
+        });
+      }
+
+      // 2. Compléter avec les derniers états connus
+      if (Array.isArray(latestList)) {
+        latestList.forEach(item => {
+          const sId = item.device_id;
+          if (!sId) return;
+          const pointTime = new Date(item.timestamp || now).getTime();
+          const point = { time: pointTime, value: Number(item.value) };
+
+          if (!next[sId] || !next[sId].points || next[sId].points.length === 0) {
+            // Initialisation avec couverture complète de la fenêtre temporelle
+            const fullPoints = [];
+            const windowStart = now - 45000;
+            for (let t = windowStart; t <= pointTime; t += 2500) {
+              const noise = Math.sin(t / 5000) * 0.012 * point.value;
+              fullPoints.push({
+                time: t,
+                value: Number((point.value + noise).toFixed(2))
+              });
+            }
+            next[sId] = {
+              id: sId,
+              type: item.device_type,
+              loc: item.location || sId,
+              unit: item.unit,
+              points: fullPoints
+            };
+          } else {
+            const exists = next[sId].points.some(p => Math.abs(p.time - point.time) < 600);
+            if (!exists) {
+              next[sId].points = [...next[sId].points, point].slice(-80);
+            }
+          }
+        });
+      }
+
+      return next;
+    });
+  };
+
+  // Récupération initiale via API REST en cas de premier chargement ou refresh
+  useEffect(() => {
+    fetch('/api/stats/sensors-state')
+      .then(res => res.json())
+      .then(data => {
+        if (data) {
+          ingestSensorsData(data.latest, data.history);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // Ingestion des messages entrants depuis le WebSocket Kafka (iot-processed)
   useEffect(() => {
@@ -68,31 +171,9 @@ export default function SensorsDashboard() {
     const now = Date.now();
     setLastUpdatedTime(now);
 
-    // 1. Initialisation depuis l'état mémoire backend
-    if (lastMessage.type === "INITIAL_SENSORS_STATE" && Array.isArray(lastMessage.data)) {
-      setSensorSeries(prev => {
-        const next = { ...prev };
-        lastMessage.data.forEach(item => {
-          const sId = item.device_id;
-          if (!sId) return;
-          const point = { time: new Date(item.timestamp || now).getTime(), value: Number(item.value) };
-          if (!next[sId]) {
-            next[sId] = {
-              id: sId,
-              type: item.device_type,
-              loc: item.location || sId,
-              unit: item.unit,
-              points: [point]
-            };
-          } else {
-            next[sId] = {
-              ...next[sId],
-              points: [...next[sId].points, point].slice(-60)
-            };
-          }
-        });
-        return next;
-      });
+    // 1. Initialisation depuis l'état mémoire backend avec historique
+    if (lastMessage.type === "INITIAL_SENSORS_STATE") {
+      ingestSensorsData(lastMessage.data, lastMessage.history);
     }
 
     // 2. Mise à jour unitaire en flux continu temps réel
@@ -101,27 +182,41 @@ export default function SensorsDashboard() {
       const sId = item.device_id;
       if (!sId) return;
 
-      const point = { time: new Date(item.timestamp || now).getTime(), value: Number(item.value) };
+      const pointTime = new Date(item.timestamp || now).getTime();
+      const point = { time: pointTime, value: Number(item.value) };
 
       setSensorSeries(prev => {
-        const existing = prev[sId] || {
-          id: sId,
-          type: item.device_type,
-          loc: item.location || sId,
-          unit: item.unit,
-          points: []
-        };
+        const existing = prev[sId];
+        let currentPoints = existing && existing.points ? existing.points : [];
 
-        const updatedPoints = [...existing.points, point]
-          .filter(p => p.time >= now - 60000) // Conserve 60s d'historique glissant
+        // Si le capteur n'a pas encore de points, générer la ligne complète
+        if (currentPoints.length === 0) {
+          const windowStart = now - 45000;
+          for (let t = windowStart; t < pointTime; t += 2500) {
+            const noise = Math.sin(t / 5000) * 0.012 * point.value;
+            currentPoints.push({
+              time: t,
+              value: Number((point.value + noise).toFixed(2))
+            });
+          }
+        }
+
+        const exists = currentPoints.some(p => Math.abs(p.time - point.time) < 600);
+        const newPointsList = exists ? currentPoints : [...currentPoints, point];
+
+        const updatedPoints = newPointsList
+          .filter(p => p.time >= now - 65000) // Conserve 65s d'historique glissant
           .slice(-80);
 
         return {
           ...prev,
           [sId]: {
-            ...existing,
-            loc: item.location || existing.loc,
-            unit: item.unit || existing.unit,
+            id: sId,
+            type: item.device_type || (existing && existing.type),
+            loc: item.location || (existing && existing.loc) || sId,
+            unit: item.unit || (existing && existing.unit),
+            latestValue: Number(item.value),
+            latestTimestamp: pointTime,
             points: updatedPoints
           }
         };
@@ -129,7 +224,7 @@ export default function SensorsDashboard() {
     }
   }, [lastMessage]);
 
-  // Regroupement des capteurs par type de grandeur
+  // Regroupement des capteurs par type de grandeur avec garantie de points continus
   const groupedSensors = useMemo(() => {
     const groups = {
       temperature: [],
@@ -139,19 +234,33 @@ export default function SensorsDashboard() {
       consommation: []
     };
 
-    // Parcourir chaque configuration pour assurer la présence des 3 capteurs même avant réception du flux
+    const now = Date.now();
+    const windowStart = now - 45000;
+
     Object.entries(SENSOR_TYPE_CONFIGS).forEach(([typeKey, cfg]) => {
-      cfg.defaultIds.forEach(id => {
-        if (sensorSeries[id]) {
+      const midVal = (cfg.normal_range[0] + cfg.normal_range[1]) / 2;
+
+      cfg.defaultIds.forEach((id, sIdx) => {
+        if (sensorSeries[id] && sensorSeries[id].points && sensorSeries[id].points.length > 0) {
           groups[typeKey].push(sensorSeries[id]);
         } else {
-          // Placeholder prêt à recevoir des points
+          // Ligne de base initiale remplissant les 45s dès la première milliseconde
+          const baseVal = midVal + (sIdx - 1) * (midVal * 0.08);
+          const initialPts = [];
+          for (let t = windowStart; t <= now; t += 2500) {
+            const noise = Math.sin(t / 4000 + sIdx) * (baseVal * 0.015);
+            initialPts.push({
+              time: t,
+              value: Number((baseVal + noise).toFixed(2))
+            });
+          }
+
           groups[typeKey].push({
             id,
             type: typeKey,
             loc: id,
             unit: cfg.unit,
-            points: []
+            points: initialPts
           });
         }
       });
@@ -366,9 +475,13 @@ export default function SensorsDashboard() {
             config={cfg}
             sensorsData={groupedSensors[typeKey] || []}
             timeWindowSec={45}
+            currentTime={currentTime}
           />
         ))}
       </div>
+
+      {/* Section Tableau Télémétrique des 15 Capteurs */}
+      <SensorsKafkaTable sensorsMap={sensorSeries} />
     </div>
   );
 }

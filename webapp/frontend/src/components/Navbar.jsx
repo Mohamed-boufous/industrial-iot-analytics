@@ -6,21 +6,24 @@ import {
   Broadcast, 
   ChartLineUp, 
   GearSix, 
-  WifiHigh 
+  WifiHigh,
+  WifiSlash
 } from '@phosphor-icons/react';
 import { AnimatedThemeToggler } from './ui/AnimatedThemeToggler';
+import { useWebSocket } from '../hooks/useWebSocket';
 
 const navItems = [
   { label: "Alertes", icon: WarningOctagon, path: "/" },
   { label: "Capteurs Live", icon: Broadcast, path: "/sensors" },
   { label: "Statistiques", icon: ChartLineUp, path: "/stats" },
-  { label: "Paramètres", icon: GearSix, path: "/settings" },
+  { label: "Parametres", icon: GearSix, path: "/settings" },
 ];
 
 export default function Navbar() {
   const location = useLocation();
   const navigate = useNavigate();
   const [isScrolled, setIsScrolled] = useState(false);
+  const { isConnected } = useWebSocket('/ws/alerts');
 
   useEffect(() => {
     const handleScroll = () => {
@@ -121,10 +124,53 @@ export default function Navbar() {
           <div className="top-controls-right">
             <AnimatedThemeToggler variant="circle" duration={400} />
             
-            {/* Macaron Statut Unique */}
-            <div className="system-status-badge">
-              <WifiHigh size={16} weight="bold" className="wifi-icon" />
-              <span className="status-text">Système En Ligne</span>
+            {/* Macaron Statut Dynamique Réel */}
+            <div
+              className="system-status-badge"
+              style={{
+                backgroundColor: isConnected ? "rgba(34, 197, 94, 0.08)" : "rgba(239, 68, 68, 0.08)",
+                border: `1px solid ${isConnected ? "rgba(34, 197, 94, 0.3)" : "rgba(239, 68, 68, 0.3)"}`,
+                transition: "all 0.3s ease"
+              }}
+            >
+              {/* Point Indicateur Pulse */}
+              <span style={{
+                position: "relative",
+                display: "flex",
+                width: "7px",
+                height: "7px"
+              }}>
+                {isConnected && (
+                  <span style={{
+                    position: "absolute",
+                    width: "100%",
+                    height: "100%",
+                    borderRadius: "50%",
+                    backgroundColor: "#22c55e",
+                    opacity: 0.75,
+                    animation: "ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite"
+                  }} />
+                )}
+                <span style={{
+                  position: "relative",
+                  display: "inline-flex",
+                  borderRadius: "50%",
+                  width: "7px",
+                  height: "7px",
+                  backgroundColor: isConnected ? "#22c55e" : "#ef4444",
+                  boxShadow: isConnected ? "0 0 6px #22c55e" : "0 0 6px #ef4444"
+                }} />
+              </span>
+
+              {isConnected ? (
+                <WifiHigh size={15} weight="bold" style={{ color: "#22c55e" }} />
+              ) : (
+                <WifiSlash size={15} weight="bold" style={{ color: "#ef4444" }} />
+              )}
+
+              <span className="status-text" style={{ color: isConnected ? "var(--azura-text)" : "#ef4444", fontWeight: 700 }}>
+                {isConnected ? "Systeme En Ligne" : "Connexion Perdue"}
+              </span>
             </div>
           </div>
         </div>

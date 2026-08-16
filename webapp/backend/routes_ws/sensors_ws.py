@@ -55,10 +55,28 @@ kafka_service.add_listener(on_kafka_sensor_event)
 async def websocket_sensors_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
-        # Envoie l'état actuel de tous les capteurs en mémoire dès la connexion
+        # Envoie l'état actuel et l'historique de tous les capteurs dès la connexion
+        from services.mongo_service import mongo_service
+        history_dict = mongo_service.get_all_sensors_recent_history(limit_per_sensor=60)
+        for dev_id, pts in kafka_service.sensors_history.items():
+            if dev_id not in history_dict:
+                history_dict[dev_id] = list(pts)
+            else:
+                combined = history_dict[dev_id] + list(pts)
+                seen_times = set()
+                dedup = []
+                for p in combined:
+                    t = p.get("timestamp")
+                    if t not in seen_times:
+                        seen_times.add(t)
+                        dedup.append(p)
+                dedup.sort(key=lambda x: str(x.get("timestamp", "")))
+                history_dict[dev_id] = dedup[-60:]
+
         await websocket.send_json({
             "type": "INITIAL_SENSORS_STATE",
-            "data": list(kafka_service.latest_sensors.values())
+            "data": list(kafka_service.latest_sensors.values()),
+            "history": history_dict
         })
         
         # Maintient la connexion ouverte avec PING régulier anti-timeout

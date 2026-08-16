@@ -76,6 +76,36 @@ class MongoService:
         history.reverse() # Remet dans l'ordre chronologique
         return history
 
+    def get_all_sensors_recent_history(self, limit_per_sensor: int = 60) -> dict[str, list[dict]]:
+        """
+        Retourne l'historique récent des mesures pour chacun des 15 capteurs depuis raw_measurements.
+        Permet de remplir l'axe temporel X immédiatement dès le chargement ou refresh de la page.
+        """
+        db = self._get_db()
+        history = {}
+        all_sensor_ids = [
+            "sensor_temp_001", "sensor_temp_002", "sensor_temp_003",
+            "sensor_vib_001", "sensor_vib_002", "sensor_vib_003",
+            "sensor_pres_001", "sensor_pres_002", "sensor_pres_003",
+            "sensor_hum_001", "sensor_hum_002", "sensor_hum_003",
+            "sensor_pow_001", "sensor_pow_002", "sensor_pow_003"
+        ]
+        
+        for dev_id in all_sensor_ids:
+            try:
+                docs = list(db[settings.COLLECTION_RAW].find(
+                    {"device_id": dev_id},
+                    {"_id": 0, "device_id": 1, "device_type": 1, "location": 1, "timestamp": 1, "value": 1, "unit": 1, "status": 1}
+                ).sort("timestamp", DESCENDING).limit(limit_per_sensor))
+                
+                docs.reverse()
+                if docs:
+                    history[dev_id] = docs
+            except Exception:
+                pass
+                
+        return history
+
     def get_recent_alerts(self, limit: int = 100) -> list[dict]:
         """Retourne les alertes les plus récentes depuis la collection alerts_history."""
         db = self._get_db()

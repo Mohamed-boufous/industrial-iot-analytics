@@ -48,3 +48,33 @@ def get_recent_alerts(limit: int = Query(default=100, ge=1, le=500)):
     except Exception as e:
         from services.kafka_consumer import kafka_service
         return {"count": len(kafka_service.recent_alerts), "alerts": kafka_service.recent_alerts}
+
+@router.get("/sensors-state")
+def get_sensors_state():
+    """Retourne l'état actuel et l'historique récent de tous les 15 capteurs depuis MongoDB et Kafka."""
+    from services.kafka_consumer import kafka_service
+    
+    # 1. Historique complet depuis MongoDB
+    history_dict = mongo_service.get_all_sensors_recent_history(limit_per_sensor=60)
+    
+    # 2. Compléter avec les points récents en mémoire
+    for dev_id, pts in kafka_service.sensors_history.items():
+        if dev_id not in history_dict:
+            history_dict[dev_id] = list(pts)
+        else:
+            combined = history_dict[dev_id] + list(pts)
+            seen_times = set()
+            dedup = []
+            for p in combined:
+                t = p.get("timestamp")
+                if t not in seen_times:
+                    seen_times.add(t)
+                    dedup.append(p)
+            dedup.sort(key=lambda x: str(x.get("timestamp", "")))
+            history_dict[dev_id] = dedup[-60:]
+
+    return {
+        "latest": list(kafka_service.latest_sensors.values()),
+        "history": history_dict
+    }
+

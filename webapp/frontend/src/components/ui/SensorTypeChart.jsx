@@ -15,14 +15,16 @@ const SENSOR_LINE_COLORS = [
  * 
  * - Titre et Plage nominale centrés en haut.
  * - Pointage 2D de haute précision interactif.
+ * - Axe X Temporel Continu (HH:mm:ss) avec défilement fluide.
  * - Valeurs réelles des 3 capteurs affichées au centre du bas de diagramme.
- * - Suppression des informations redondantes.
+ * - Aucune perte d'état lors du refresh grâce au tampon d'historique backend.
  */
 export function SensorTypeChart({
   typeKey,
   config,
   sensorsData = [],
-  timeWindowSec = 45
+  timeWindowSec = 45,
+  currentTime: propCurrentTime
 }) {
   const [hoveredData, setHoveredData] = useState(null);
   const svgRef = useRef(null);
@@ -57,15 +59,15 @@ export function SensorTypeChart({
     };
   }, [sensorsData, normMin, normMax, fault_floor, fault_ceiling]);
 
-  // Fenêtre temporelle glissante
-  const now = Date.now();
+  // Fenêtre temporelle continue glissante (synchronisée via horloge globale)
+  const now = propCurrentTime || Date.now();
   const minTime = now - timeWindowSec * 1000;
   const maxTime = now;
 
   // Dimensions graphiques SVG larges (Format Bande Pleine Largeur)
   const width = 980;
-  const height = 260;
-  const padding = { left: 65, right: 30, top: 25, bottom: 35 };
+  const height = 275;
+  const padding = { left: 65, right: 30, top: 25, bottom: 42 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
 
@@ -82,6 +84,20 @@ export function SensorTypeChart({
 
   const normMinY = getY(normMin);
   const normMaxY = getY(normMax);
+
+  // Graduations temporelles réelles sur l'Axe X (HH:mm:ss défilant chaque seconde)
+  const timeTicks = useMemo(() => {
+    return [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+      const t = minTime + ratio * (maxTime - minTime);
+      const timeStr = new Date(t).toLocaleTimeString('fr-FR', {
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
+      return { time: t, label: timeStr, x: getX(t) };
+    });
+  }, [minTime, maxTime]);
 
   // Préparation des séries de points avec métadonnées complètes
   const processedSeries = useMemo(() => {
@@ -192,7 +208,7 @@ export function SensorTypeChart({
       boxShadow: "0 4px 24px rgba(0, 0, 0, 0.04)",
       overflow: "hidden"
     }}>
-      {/* 1. En-tete de la Carte : Titre de la Grandeur et Plage Nominale Centres l'un sur l'autre */}
+      {/* 1. En-tête de la Carte : Titre de la Grandeur et Plage Nominale Centrés */}
       <div style={{
         display: "flex",
         flexDirection: "column",
@@ -230,7 +246,7 @@ export function SensorTypeChart({
         style={{
           position: "relative",
           width: "100%",
-          height: "260px",
+          height: "275px",
           backgroundColor: "rgba(0, 0, 0, 0.015)",
           borderRadius: "12px",
           cursor: "crosshair",
@@ -343,6 +359,31 @@ export function SensorTypeChart({
             stroke="var(--azura-border)"
             strokeWidth="1.2"
           />
+
+          {/* Graduations et Horodatages Dynamiques de l'Axe X (HH:mm:ss) */}
+          {timeTicks.map((tick, idx) => (
+            <g key={idx}>
+              <line
+                x1={tick.x}
+                y1={padding.top + chartHeight}
+                x2={tick.x}
+                y2={padding.top + chartHeight + 6}
+                stroke="var(--azura-border)"
+                strokeWidth="1.2"
+              />
+              <text
+                x={tick.x}
+                y={padding.top + chartHeight + 20}
+                textAnchor="middle"
+                fill="var(--azura-text-muted)"
+                fontSize="10"
+                fontWeight="600"
+                fontFamily="'JetBrains Mono', monospace"
+              >
+                {tick.label}
+              </text>
+            </g>
+          ))}
 
           {/* Courbes Télémétriques des 3 Capteurs */}
           {processedSeries.map((sp, idx) => {
