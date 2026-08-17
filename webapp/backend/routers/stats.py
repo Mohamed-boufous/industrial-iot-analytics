@@ -78,3 +78,43 @@ def get_sensors_state():
         "history": history_dict
     }
 
+@router.get("/filtered-kpis")
+def get_filtered_kpis(
+    start_date: str = Query(default=None),
+    end_date: str = Query(default=None),
+    device_id: str = Query(default="ALL")
+):
+    """Retourne les KPIs globaux filtrés par dates et capteurs depuis MongoDB."""
+    try:
+        return mongo_service.get_filtered_kpis(start_date=start_date, end_date=end_date, device_id=device_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur MongoDB: {str(e)}")
+
+@router.get("/filtered-alerts")
+def get_filtered_alerts(
+    start_date: str = Query(default=None),
+    end_date: str = Query(default=None),
+    device_id: str = Query(default="ALL"),
+    limit: int = Query(default=200, ge=1, le=1000)
+):
+    """Retourne la liste des alertes filtrées depuis alerts_history."""
+    try:
+        alerts = mongo_service.get_filtered_alerts(start_date=start_date, end_date=end_date, device_id=device_id, limit=limit)
+        return {"count": len(alerts), "alerts": alerts}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur MongoDB: {str(e)}")
+
+@router.get("/filtered-raw")
+def get_filtered_raw(
+    start_date: str = Query(default=None),
+    end_date: str = Query(default=None),
+    device_id: str = Query(default="ALL"),
+    limit: int = Query(default=300, ge=1, le=1000)
+):
+    """Retourne la télémétrie brute filtrée depuis raw_measurements."""
+    try:
+        measurements = mongo_service.get_filtered_raw_measurements(start_date=start_date, end_date=end_date, device_id=device_id, limit=limit)
+        return {"count": len(measurements), "measurements": measurements}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur MongoDB: {str(e)}")
+

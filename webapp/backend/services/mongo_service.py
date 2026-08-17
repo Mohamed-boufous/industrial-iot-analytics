@@ -112,4 +112,91 @@ class MongoService:
         docs = db[settings.COLLECTION_ALERTS].find({}, {"_id": 0}).sort("timestamp", DESCENDING).limit(limit)
         return list(docs)
 
+    def get_filtered_kpis(self, start_date: str = None, end_date: str = None, device_id: str = None) -> dict:
+        """Calcule les KPIs globaux filtrés par plage temporelle et par capteur."""
+        db = self._get_db()
+        query_raw = {}
+        query_alerts = {"status": {"$exists": True, "$ne": None, "$nin": ["NORMAL"]}}
+
+        if device_id and device_id != "ALL":
+            query_raw["device_id"] = device_id
+            query_alerts["device_id"] = device_id
+
+        if start_date or end_date:
+            time_query = {}
+            if start_date:
+                time_query["$gte"] = start_date
+            if end_date:
+                time_query["$lte"] = end_date
+            query_raw["timestamp"] = time_query
+            query_alerts["timestamp"] = time_query
+
+        total_raw = db[settings.COLLECTION_RAW].count_documents(query_raw)
+        total_alerts = db[settings.COLLECTION_ALERTS].count_documents(query_alerts)
+
+        # Calcul du taux de conformité
+        compliance_rate = 100.0
+        if total_raw > 0:
+            compliance_rate = max(0.0, round(((total_raw - total_alerts) / total_raw) * 100, 1))
+
+        # Identification du capteur le plus instable
+        top_sensor = "Aucun"
+        top_pipeline = [
+            {"$match": query_alerts},
+            {"$group": {"_id": "$device_id", "count": {"$sum": 1}}},
+            {"$sort": {"count": DESCENDING}},
+            {"$limit": 1}
+        ]
+        top_res = list(db[settings.COLLECTION_ALERTS].aggregate(top_pipeline))
+        if top_res:
+            top_sensor = f"{top_res[0]['_id']} ({top_res[0]['count']} incidents)"
+
+        return {
+            "total_raw_measurements": total_raw,
+            "total_alerts": total_alerts,
+            "compliance_rate": compliance_rate,
+            "top_problematic_sensor": top_sensor,
+            "monitored_sensors_count": 15
+        }
+
+    def get_filtered_alerts(self, start_date: str = None, end_date: str = None, device_id: str = None, limit: int = 200) -> list[dict]:
+        """Retourne les alertes filtrées depuis alerts_history."""
+        db = self._get_db()
+        query = {}
+
+        if device_id and device_id != "ALL":
+            query["device_id"] = device_id
+
+        if start_date or end_date:
+            time_query = {}
+            if start_date:
+                time_query["$gte"] = start_date
+            if end_date:
+                time_query["$lte"] = end_date
+            query["timestamp"] = time_query
+
+        docs = db[settings.COLLECTION_ALERTS].find(query, {"_id": 0}).sort("timestamp", DESCENDING).limit(limit)
+        return list(docs)
+
+    def get_filtered_raw_measurements(self, start_date: str = None, end_date: str = None, device_id: str = None, limit: int = 300) -> list[dict]:
+        """Retourne les mesures brutes filtrées depuis raw_measurements."""
+        db = self._get_db()
+        query = {}
+
+        if device_id and device_id != "ALL":
+            query["device_id"] = device_id
+
+        if start_date or end_date:
+            time_query = {}
+            if start_date:
+                time_query["$gte"] = start_date
+            if end_date:
+                time_query["$lte"] = end_date
+            query["timestamp"] = time_query
+
+        docs = db[settings.COLLECTION_RAW].find(query, {"_id": 0}).sort("timestamp", DESCENDING).limit(limit)
+        res = list(docs)
+        res.reverse()
+        return res
+
 mongo_service = MongoService()
