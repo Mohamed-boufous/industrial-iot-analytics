@@ -375,58 +375,81 @@ export default function SensorsDashboard() {
         borderRadius: "14px",
         boxShadow: "0 2px 10px rgba(0, 0, 0, 0.03)"
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
-          {/* Bouton MetalButton Statut Telemetrie */}
-          <MetalButton
-            preset="silver"
-            variant="outline"
-            strength={1.0}
-            ringCssPx={4.0}
-            shaderScale={1.8}
-            borderRadius={14}
-            className="!py-3 !px-7 border-0 bg-transparent"
-            style={{ padding: "10px 24px" }}
-            metalFxStyle={{
-              backgroundColor: isConnected ? "rgba(34, 197, 94, 0.16)" : "rgba(239, 68, 68, 0.16)",
-              border: `1px solid ${isConnected ? "rgba(34, 197, 94, 0.5)" : "rgba(239, 68, 68, 0.5)"}`,
-              borderRadius: "14px",
-              boxShadow: isConnected ? "0 4px 18px rgba(34, 197, 94, 0.22)" : "none"
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+          {/* Badge 3D Statut Telemetrie */}
+          <div
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "8px",
+              padding: "8px 16px",
+              borderRadius: "12px",
+              backgroundColor: isConnected ? "rgba(34, 197, 94, 0.09)" : "rgba(239, 68, 68, 0.09)",
+              border: `1px solid ${isConnected ? "rgba(34, 197, 94, 0.35)" : "rgba(239, 68, 68, 0.35)"}`,
+              boxShadow: isConnected
+                ? "inset 0 1px 1px rgba(255, 255, 255, 0.8), 0 2px 6px rgba(34, 197, 94, 0.12)"
+                : "inset 0 1px 1px rgba(255, 255, 255, 0.8), 0 2px 6px rgba(239, 68, 68, 0.12)",
+              cursor: "default",
+              userSelect: "none",
+              transition: "all 0.25s cubic-bezier(0.4, 0, 0.2, 1)"
             }}
           >
-            <div style={{ display: "inline-flex", alignItems: "center", gap: "10px" }}>
+            <span style={{
+              position: "relative",
+              display: "inline-flex",
+              width: "8px",
+              height: "8px"
+            }}>
+              {isConnected && (
+                <span style={{
+                  position: "absolute",
+                  width: "100%",
+                  height: "100%",
+                  borderRadius: "50%",
+                  backgroundColor: "#22c55e",
+                  opacity: 0.75,
+                  animation: "ping 1.6s cubic-bezier(0, 0, 0.2, 1) infinite"
+                }} />
+              )}
               <span style={{
-                width: "9px",
-                height: "9px",
+                position: "relative",
                 borderRadius: "50%",
+                width: "8px",
+                height: "8px",
                 backgroundColor: isConnected ? "#22c55e" : "#ef4444",
-                boxShadow: isConnected ? "0 0 10px #22c55e" : "none"
+                boxShadow: isConnected ? "0 0 8px #22c55e" : "none"
               }} />
-              <span style={{
-                color: isConnected ? "#22c55e" : "#ef4444",
-                fontSize: "0.85rem",
-                fontWeight: 800,
-                letterSpacing: "0.01em",
-                fontFamily: "'Plus Jakarta Sans', sans-serif"
-              }}>
-                {isConnected ? "Flux Telemetrie Actif" : "Connexion au Flux..."}
-              </span>
-            </div>
-          </MetalButton>
+            </span>
+            <span style={{
+              color: isConnected ? "#15803d" : "#b91c1c",
+              fontSize: "0.82rem",
+              fontWeight: 750,
+              letterSpacing: "0.01em",
+              fontFamily: "'Plus Jakarta Sans', sans-serif"
+            }}>
+              {isConnected ? "Flux Telemetrie Actif" : "Connexion au Flux..."}
+            </span>
+          </div>
 
-          {/* Badge Nombre de Capteurs Connectés */}
+          {/* Badge 3D Nombre de Capteurs Connectes */}
           <div style={{
             display: "inline-flex",
             alignItems: "center",
             gap: "8px",
             padding: "8px 16px",
-            borderRadius: "10px",
+            borderRadius: "12px",
             backgroundColor: "rgba(2, 132, 199, 0.08)",
-            border: "1px solid rgba(2, 132, 199, 0.25)",
-            color: "var(--azura-text)",
+            border: "1px solid rgba(2, 132, 199, 0.35)",
+            boxShadow: "inset 0 1px 1px rgba(255, 255, 255, 0.8), 0 2px 6px rgba(2, 132, 199, 0.12)",
+            color: "#0369a1",
             fontSize: "0.82rem",
-            fontWeight: 700
+            fontWeight: 750,
+            cursor: "default",
+            userSelect: "none",
+            letterSpacing: "0.01em",
+            fontFamily: "'Plus Jakarta Sans', sans-serif"
           }}>
-            <Cpu size={18} weight="bold" style={{ color: "#0284c7" }} />
+            <Cpu size={17} weight="bold" style={{ color: "#0284c7" }} />
             <span>15/15 Capteurs Actifs</span>
           </div>
         </div>

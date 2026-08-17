@@ -304,105 +304,119 @@ export function SensorsKafkaTable({ sensorsMap = {} }) {
               )}
             </AnimatePresence>
 
-            {/* Bouton Streaming Liquid Metal */}
-            <MetalButton
-              preset={isStreaming ? "chromatic" : "silver"}
-              variant="outline"
-              strength={1.0}
-              ringCssPx={4.0}
-              shaderScale={1.8}
-              borderRadius={14}
+            {/* Bouton 3D Tactile Streaming Live / Pause */}
+            <motion.button
+              type="button"
               onClick={toggleStreaming}
-              className="!py-3.5 !px-8 border-0 bg-transparent cursor-pointer"
-              style={{ padding: "12px 28px" }}
-              metalFxStyle={{
-                backgroundColor: isStreaming ? "rgba(34, 197, 94, 0.16)" : "rgba(0, 0, 0, 0.05)",
-                border: isStreaming ? "1px solid rgba(34, 197, 94, 0.5)" : "1px solid var(--azura-border)",
-                borderRadius: "14px",
-                boxShadow: isStreaming ? "0 4px 18px rgba(34, 197, 94, 0.22)" : "none"
+              whileHover={{ y: -2, scale: 1.02 }}
+              whileTap={{ y: 1.5, scale: 0.97 }}
+              transition={{ type: "spring", stiffness: 500, damping: 20 }}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "10px",
+                padding: "8px 18px",
+                borderRadius: "12px",
+                border: isStreaming ? "1px solid #86efac" : "1px solid #cbd5e1",
+                background: isStreaming
+                  ? "linear-gradient(180deg, #f0fdf4 0%, #dcfce7 100%)"
+                  : "linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%)",
+                boxShadow: isStreaming
+                  ? "inset 0 1px 1px rgba(255, 255, 255, 0.9), 0 3px 0 #4ade80, 0 6px 14px rgba(34, 197, 94, 0.22)"
+                  : "inset 0 1px 1px rgba(255, 255, 255, 0.9), 0 3px 0 #94a3b8, 0 5px 10px rgba(0, 0, 0, 0.06)",
+                cursor: "pointer",
+                userSelect: "none",
+                outline: "none"
               }}
             >
-              <div style={{ display: "inline-flex", alignItems: "center", gap: "12px" }}>
+              <span style={{
+                position: "relative",
+                display: "flex",
+                width: "8px",
+                height: "8px"
+              }}>
+                {isStreaming && (
+                  <span style={{
+                    position: "absolute",
+                    width: "100%",
+                    height: "100%",
+                    borderRadius: "50%",
+                    backgroundColor: "#22c55e",
+                    opacity: 0.75,
+                    animation: "ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite"
+                  }} />
+                )}
                 <span style={{
                   position: "relative",
-                  display: "flex",
-                  width: "9px",
-                  height: "9px"
-                }}>
-                  {isStreaming && (
-                    <span style={{
-                      position: "absolute",
-                      width: "100%",
-                      height: "100%",
-                      borderRadius: "50%",
-                      backgroundColor: "#22c55e",
-                      opacity: 0.75,
-                      animation: "ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite"
-                    }} />
-                  )}
-                  <span style={{
-                    position: "relative",
-                    display: "inline-flex",
-                    borderRadius: "50%",
-                    width: "9px",
-                    height: "9px",
-                    backgroundColor: isStreaming ? "#22c55e" : "var(--azura-text-muted)",
-                    boxShadow: isStreaming ? "0 0 10px #22c55e" : "none"
-                  }} />
-                </span>
+                  display: "inline-flex",
+                  borderRadius: "50%",
+                  width: "8px",
+                  height: "8px",
+                  backgroundColor: isStreaming ? "#22c55e" : "#64748b",
+                  boxShadow: isStreaming ? "0 0 8px #22c55e" : "none"
+                }} />
+              </span>
 
-                <span style={{
-                  fontSize: "0.875rem",
-                  fontWeight: 800,
-                  color: isStreaming ? "#22c55e" : "var(--azura-text-muted)",
-                  letterSpacing: "0.01em",
-                  fontFamily: "'Plus Jakarta Sans', sans-serif"
-                }}>
-                  {isStreaming ? "Streaming Live Actif" : "Streaming en Pause"}
-                </span>
-              </div>
-            </MetalButton>
+              <span style={{
+                fontSize: "0.82rem",
+                fontWeight: 800,
+                color: isStreaming ? "#15803d" : "#475569",
+                letterSpacing: "0.01em",
+                fontFamily: "'Plus Jakarta Sans', sans-serif"
+              }}>
+                {isStreaming ? "Streaming Live Actif" : "Streaming en Pause"}
+              </span>
+            </motion.button>
           </div>
 
-          {/* Bouton Actualiser Manuel */}
+          {/* Bouton 3D Tactile Actualiser Manuel */}
           <AnimatePresence mode="popLayout">
             {!isStreaming && (
               <motion.div
                 layout
-                initial={{ opacity: 0, x: -20, scale: 0.85 }}
+                initial={{ opacity: 0, x: -12, scale: 0.9 }}
                 animate={{ opacity: 1, x: 0, scale: 1 }}
-                exit={{ opacity: 0, x: -20, scale: 0.85 }}
-                transition={{ type: "spring", stiffness: 400, damping: 25 }}
+                exit={{ opacity: 0, x: -12, scale: 0.9 }}
+                transition={{ type: "spring", stiffness: 450, damping: 25 }}
               >
-                <MetalButton
-                  preset="gold"
-                  variant="outline"
-                  strength={1.0}
-                  ringCssPx={4.0}
-                  shaderScale={1.8}
-                  borderRadius={14}
+                <motion.button
+                  type="button"
                   onClick={handleManualRefresh}
                   disabled={isRefreshing}
-                  className="!py-3.5 !px-6 border-0 bg-transparent cursor-pointer"
-                  style={{ padding: "12px 24px" }}
-                  metalFxStyle={{
-                    backgroundColor: "rgba(239, 68, 68, 0.16)",
-                    border: "1px solid rgba(239, 68, 68, 0.5)",
-                    borderRadius: "14px",
-                    boxShadow: "0 4px 18px rgba(239, 68, 68, 0.22)"
+                  whileHover={{ y: isRefreshing ? 0 : -2, scale: isRefreshing ? 1 : 1.02 }}
+                  whileTap={{ y: isRefreshing ? 0 : 1.5, scale: isRefreshing ? 1 : 0.97 }}
+                  transition={{ type: "spring", stiffness: 500, damping: 20 }}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    padding: "8px 18px",
+                    borderRadius: "12px",
+                    border: "1px solid #fca5a5",
+                    background: "linear-gradient(180deg, #fef2f2 0%, #fee2e2 100%)",
+                    boxShadow: "inset 0 1px 1px rgba(255, 255, 255, 0.9), 0 3px 0 #f87171, 0 6px 14px rgba(239, 68, 68, 0.22)",
+                    cursor: isRefreshing ? "not-allowed" : "pointer",
+                    opacity: isRefreshing ? 0.75 : 1,
+                    userSelect: "none",
+                    outline: "none"
                   }}
                 >
-                  <div style={{ display: "inline-flex", alignItems: "center", gap: "10px", color: "var(--azura-accent-red)" }}>
-                    <ArrowsClockwise
-                      size={18}
-                      weight="bold"
-                      className={isRefreshing ? "animate-spin" : ""}
-                    />
-                    <span style={{ fontSize: "0.875rem", fontWeight: 800, letterSpacing: "0.01em", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
-                      {isRefreshing ? "Synchronisation..." : "Actualiser"}
-                    </span>
-                  </div>
-                </MetalButton>
+                  <ArrowsClockwise
+                    size={16}
+                    weight="bold"
+                    style={{ color: "#dc2626" }}
+                    className={isRefreshing ? "animate-spin" : ""}
+                  />
+                  <span style={{
+                    fontSize: "0.82rem",
+                    fontWeight: 800,
+                    color: "#b91c1c",
+                    letterSpacing: "0.01em",
+                    fontFamily: "'Plus Jakarta Sans', sans-serif"
+                  }}>
+                    {isRefreshing ? "Synchronisation..." : "Actualiser"}
+                  </span>
+                </motion.button>
               </motion.div>
             )}
           </AnimatePresence>
