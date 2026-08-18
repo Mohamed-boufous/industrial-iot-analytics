@@ -61,12 +61,9 @@ def create_spark_session():
 def process_micro_batch(batch_df, batch_id):
     """
     Fonction exécutée à chaque micro-lot de streaming (Driver).
-    Applique dynamiquement les seuils à jour sans aucun redémarrage nécessaire.
+    Traitement vectorisé Catalyst ultra-rapide avec mise en cache mémoire.
     """
-    if batch_df.rdd.isEmpty():
-        return
-
-    # 1. Chargement dynamique des seuils à jour
+    # 1. Chargement dynamique des seuils à jour depuis MongoDB
     t = get_dynamic_thresholds()
 
     # 2. Évaluation vectorisée Catalyst du statut
@@ -86,36 +83,41 @@ def process_micro_batch(batch_df, batch_id):
         .otherwise("NORMAL")
     )
 
-    # 3. Écriture MongoDB raw_measurements (données brutes horodatées)
-    df_with_status.write \
-        .format("mongodb") \
-        .option("spark.mongodb.connection.uri", "mongodb://mongos-router:27017") \
-        .option("spark.mongodb.database", "azura_iot") \
-        .option("spark.mongodb.collection", "raw_measurements") \
-        .mode("append") \
-        .save()
+    # Mise en cache en mémoire vive pour exécuter les 3 sorties en 1 seule passe
+    df_with_status.persist()
 
-    # 4. Publication Kafka 'iot-processed' (Toutes les mesures enrichies du statut calculé)
-    df_processed = df_with_status.selectExpr(
-        "CAST(device_id AS STRING) AS key",
-        "to_json(struct(*)) AS value"
-    )
-    df_processed.write \
-        .format("kafka") \
-        .option("kafka.bootstrap.servers", "kafka1:19092,kafka2:19092,kafka3:19092") \
-        .option("topic", "iot-processed") \
-        .save()
+    try:
+        # 3. Écriture MongoDB raw_measurements
+        df_with_status.write \
+            .format("mongodb") \
+            .option("spark.mongodb.connection.uri", "mongodb://mongos-router:27017") \
+            .option("spark.mongodb.database", "azura_iot") \
+            .option("spark.mongodb.collection", "raw_measurements") \
+            .mode("append") \
+            .save()
 
-    # 5. Publication Kafka 'iot-alerts' (Uniquement les anomalies status != 'NORMAL')
-    df_alerts = df_with_status.filter(col("status") != "NORMAL") \
-                              .selectExpr("CAST(device_id AS STRING) AS key", "to_json(struct(*)) AS value")
-    
-    if not df_alerts.rdd.isEmpty():
-        df_alerts.write \
+        # 4. Publication Kafka 'iot-processed' (Toutes les mesures)
+        df_with_status.selectExpr(
+            "CAST(device_id AS STRING) AS key",
+            "to_json(struct(*)) AS value"
+        ).write \
+            .format("kafka") \
+            .option("kafka.bootstrap.servers", "kafka1:19092,kafka2:19092,kafka3:19092") \
+            .option("topic", "iot-processed") \
+            .save()
+
+        # 5. Publication Kafka 'iot-alerts' (Uniquement les anomalies)
+        df_with_status.filter(col("status") != "NORMAL") \
+            .selectExpr(
+                "CAST(device_id AS STRING) AS key",
+                "to_json(struct(*)) AS value"
+            ).write \
             .format("kafka") \
             .option("kafka.bootstrap.servers", "kafka1:19092,kafka2:19092,kafka3:19092") \
             .option("topic", "iot-alerts") \
             .save()
+    finally:
+        df_with_status.unpersist()
 
 if __name__ == "__main__":
     print("--- Démarrage du Spark Structured Streaming Engine (Dynamique) ---")
