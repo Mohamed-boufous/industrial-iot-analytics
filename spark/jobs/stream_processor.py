@@ -135,6 +135,8 @@ if __name__ == "__main__":
         StructField("device_id", StringType(), True),
         StructField("device_type", StringType(), True),
         StructField("location", StringType(), True),
+        StructField("latitude", DoubleType(), True),
+        StructField("longitude", DoubleType(), True),
         StructField("timestamp", StringType(), True),
         StructField("value", DoubleType(), True),
         StructField("unit", StringType(), True),

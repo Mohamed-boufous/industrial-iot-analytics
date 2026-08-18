@@ -11,6 +11,8 @@ class SensorReading(BaseModel):
     device_id: str
     device_type: Literal["temperature", "vibration", "pression", "humidite", "consommation"]
     location: str
+    latitude: float
+    longitude: float
     timestamp: str
     value: float
     unit: str

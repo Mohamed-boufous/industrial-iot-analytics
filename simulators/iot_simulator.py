@@ -192,6 +192,8 @@ class IoTSimulator:
                     sensor_type = sensor["type"]
                     interval = sensor["interval"]
                     loc = sensor["loc"]
+                    lat = sensor["latitude"]
+                    lng = sensor["longitude"]
                     profile = self.profiles[sensor_type]
                     
                     if current_now - last_sent_time[sensor_id] >= interval:
@@ -211,6 +213,8 @@ class IoTSimulator:
                             device_id=sensor_id,
                             device_type=sensor_type,
                             location=loc,
+                            latitude=lat,
+                            longitude=lng,
                             timestamp=current_time,
                             value=val,
                             unit=profile["unit"],

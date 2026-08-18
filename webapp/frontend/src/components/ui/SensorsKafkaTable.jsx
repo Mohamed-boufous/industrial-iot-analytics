@@ -6,7 +6,9 @@ import {
   ArrowDown, 
   CheckCircle,
   CursorClick,
-  Broadcast
+  Broadcast,
+  MapPin,
+  MapTrifold
 } from "@phosphor-icons/react";
 import {
   Table,
@@ -28,38 +30,46 @@ const SENSOR_TYPE_CONFIGS = {
   consommation: { label: "Puissance Electrique", unit: "kW", normal_range: [100.0, 500.0] }
 };
 
-// 20 Capteurs actifs surveilles repartis sur les 4 zones (5 par zone)
+// Libelles et couleurs pour les 4 emplacements officiels
+const LOCATION_DISPLAY = {
+  agadir_serre_1: { name: "Agadir - Serre 1", city: "Agadir", color: "#06b6d4" },
+  dakhla_station_emballage: { name: "Dakhla - Station Emballage", city: "Dakhla", color: "#a855f7" },
+  kenitra_station_filtrage: { name: "Kenitra - Station Filtrage", city: "Kenitra", color: "#f59e0b" },
+  tangier_med_hub: { name: "Tanger Med - Hub Logistique", city: "Tanger Med", color: "#10b981" }
+};
+
+// 20 Capteurs actifs surveilles repartis sur les 4 zones (5 par zone avec coordonnees GPS exactes X/Y)
 const ALL_SENSORS_METADATA = [
   // ── ZONE 1 : Agadir (agadir_serre_1) ──
-  { id: "sensor_temp_001", type: "temperature",  loc: "agadir_serre_1",          color: "#06b6d4" },
-  { id: "sensor_vib_001",  type: "vibration",    loc: "agadir_serre_1",          color: "#06b6d4" },
-  { id: "sensor_pres_001", type: "pression",     loc: "agadir_serre_1",          color: "#06b6d4" },
-  { id: "sensor_hum_001",  type: "humidite",     loc: "agadir_serre_1",          color: "#06b6d4" },
-  { id: "sensor_pow_001",  type: "consommation", loc: "agadir_serre_1",          color: "#06b6d4" },
+  { id: "sensor_temp_001", type: "temperature",  loc: "agadir_serre_1",          latitude: 30.2840, longitude: -9.5070, color: "#06b6d4" },
+  { id: "sensor_vib_001",  type: "vibration",    loc: "agadir_serre_1",          latitude: 30.2810, longitude: -9.5020, color: "#06b6d4" },
+  { id: "sensor_pres_001", type: "pression",     loc: "agadir_serre_1",          latitude: 30.2860, longitude: -9.5040, color: "#06b6d4" },
+  { id: "sensor_hum_001",  type: "humidite",     loc: "agadir_serre_1",          latitude: 30.2790, longitude: -9.5080, color: "#06b6d4" },
+  { id: "sensor_pow_001",  type: "consommation", loc: "agadir_serre_1",          latitude: 30.2830, longitude: -9.4980, color: "#06b6d4" },
 
   // ── ZONE 2 : Dakhla (dakhla_station_emballage) ──
-  { id: "sensor_temp_002", type: "temperature",  loc: "dakhla_station_emballage", color: "#a855f7" },
-  { id: "sensor_vib_002",  type: "vibration",    loc: "dakhla_station_emballage", color: "#a855f7" },
-  { id: "sensor_pres_002", type: "pression",     loc: "dakhla_station_emballage", color: "#a855f7" },
-  { id: "sensor_hum_002",  type: "humidite",     loc: "dakhla_station_emballage", color: "#a855f7" },
-  { id: "sensor_pow_002",  type: "consommation", loc: "dakhla_station_emballage", color: "#a855f7" },
+  { id: "sensor_temp_002", type: "temperature",  loc: "dakhla_station_emballage", latitude: 23.7140, longitude: -15.9220, color: "#a855f7" },
+  { id: "sensor_vib_002",  type: "vibration",    loc: "dakhla_station_emballage", latitude: 23.7110, longitude: -15.9170, color: "#a855f7" },
+  { id: "sensor_pres_002", type: "pression",     loc: "dakhla_station_emballage", latitude: 23.7160, longitude: -15.9190, color: "#a855f7" },
+  { id: "sensor_hum_002",  type: "humidite",     loc: "dakhla_station_emballage", latitude: 23.7090, longitude: -15.9230, color: "#a855f7" },
+  { id: "sensor_pow_002",  type: "consommation", loc: "dakhla_station_emballage", latitude: 23.7130, longitude: -15.9130, color: "#a855f7" },
 
   // ── ZONE 3 : Kenitra (kenitra_station_filtrage) ──
-  { id: "sensor_temp_003", type: "temperature",  loc: "kenitra_station_filtrage", color: "#f59e0b" },
-  { id: "sensor_vib_003",  type: "vibration",    loc: "kenitra_station_filtrage", color: "#f59e0b" },
-  { id: "sensor_pres_003", type: "pression",     loc: "kenitra_station_filtrage", color: "#f59e0b" },
-  { id: "sensor_hum_003",  type: "humidite",     loc: "kenitra_station_filtrage", color: "#f59e0b" },
-  { id: "sensor_pow_003",  type: "consommation", loc: "kenitra_station_filtrage", color: "#f59e0b" },
+  { id: "sensor_temp_003", type: "temperature",  loc: "kenitra_station_filtrage", latitude: 34.2540, longitude: -6.5720, color: "#f59e0b" },
+  { id: "sensor_vib_003",  type: "vibration",    loc: "kenitra_station_filtrage", latitude: 34.2510, longitude: -6.5670, color: "#f59e0b" },
+  { id: "sensor_pres_003", type: "pression",     loc: "kenitra_station_filtrage", latitude: 34.2560, longitude: -6.5690, color: "#f59e0b" },
+  { id: "sensor_hum_003",  type: "humidite",     loc: "kenitra_station_filtrage", latitude: 34.2490, longitude: -6.5730, color: "#f59e0b" },
+  { id: "sensor_pow_003",  type: "consommation", loc: "kenitra_station_filtrage", latitude: 34.2530, longitude: -6.5630, color: "#f59e0b" },
 
   // ── ZONE 4 : Tanger Med (tangier_med_hub) ──
-  { id: "sensor_temp_004", type: "temperature",  loc: "tangier_med_hub",          color: "#10b981" },
-  { id: "sensor_vib_004",  type: "vibration",    loc: "tangier_med_hub",          color: "#10b981" },
-  { id: "sensor_pres_004", type: "pression",     loc: "tangier_med_hub",          color: "#10b981" },
-  { id: "sensor_hum_004",  type: "humidite",     loc: "tangier_med_hub",          color: "#10b981" },
-  { id: "sensor_pow_004",  type: "consommation", loc: "tangier_med_hub",          color: "#10b981" },
+  { id: "sensor_temp_004", type: "temperature",  loc: "tangier_med_hub",          latitude: 35.8840, longitude: -5.5020, color: "#10b981" },
+  { id: "sensor_vib_004",  type: "vibration",    loc: "tangier_med_hub",          latitude: 35.8810, longitude: -5.4970, color: "#10b981" },
+  { id: "sensor_pres_004", type: "pression",     loc: "tangier_med_hub",          latitude: 35.8860, longitude: -5.4990, color: "#10b981" },
+  { id: "sensor_hum_004",  type: "humidite",     loc: "tangier_med_hub",          latitude: 35.8790, longitude: -5.5030, color: "#10b981" },
+  { id: "sensor_pow_004",  type: "consommation", loc: "tangier_med_hub",          latitude: 35.8830, longitude: -5.4930, color: "#10b981" },
 ];
 
-export function SensorsKafkaTable({ sensorsMap = {}, thresholdsConfig = null }) {
+export function SensorsKafkaTable({ sensorsMap = {}, thresholdsConfig = null, onSelectSensorLocation = null }) {
   const [isStreaming, setIsStreaming] = useState(true);
   const [frozenSensors, setFrozenSensors] = useState({});
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -222,6 +232,8 @@ export function SensorsKafkaTable({ sensorsMap = {}, thresholdsConfig = null }) 
         id: meta.id,
         device_type: label,
         location: meta.loc,
+        latitude: liveData?.latitude ?? meta.latitude,
+        longitude: liveData?.longitude ?? meta.longitude,
         value: displayVal.toFixed(1),
         unit: unit,
         nominalRange: `${normMin} - ${normMax} ${unit}`,
@@ -264,7 +276,7 @@ export function SensorsKafkaTable({ sensorsMap = {}, thresholdsConfig = null }) 
             letterSpacing: "-0.01em",
             fontFamily: "'Plus Jakarta Sans', sans-serif"
           }}>
-            Etat Telemetrique des 15 Capteurs en Temps Reel
+            Etat Telemetrique des 20 Capteurs en Temps Reel
           </h2>
         </div>
       </div>
@@ -281,7 +293,7 @@ export function SensorsKafkaTable({ sensorsMap = {}, thresholdsConfig = null }) 
         border: "1px solid var(--azura-border)",
         borderRadius: "14px"
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
           {/* Conteneur du Bouton Streaming avec Indice Temporaire 'Click me' */}
           <div style={{ position: "relative", display: "inline-flex" }}>
             <AnimatePresence>
@@ -484,7 +496,7 @@ export function SensorsKafkaTable({ sensorsMap = {}, thresholdsConfig = null }) 
         </div>
       </div>
 
-      {/* 3. Tableau Télémétrique Pleine Largeur */}
+      {/* 3. Tableau Télémétrique Pleine Largeur avec Colonne Location */}
       <div style={{
         width: "100%",
         overflowX: "auto",
@@ -496,23 +508,26 @@ export function SensorsKafkaTable({ sensorsMap = {}, thresholdsConfig = null }) 
         <Table style={{ width: "100%", tableLayout: "fixed" }}>
           <TableHeader style={{ backgroundColor: "rgba(255, 255, 255, 0.02)" }}>
             <TableRow style={{ borderBottom: "1px solid var(--azura-border)" }}>
-              <TableHead style={{ width: "18%", color: "var(--azura-text)", fontWeight: 800, fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "center", padding: "14px 16px" }}>
+              <TableHead style={{ width: "16%", color: "var(--azura-text)", fontWeight: 800, fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "center", padding: "14px 12px" }}>
                 Equipement
               </TableHead>
-              <TableHead style={{ width: "18%", color: "var(--azura-text)", fontWeight: 800, fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "center", padding: "14px 16px" }}>
+              <TableHead style={{ width: "16%", color: "var(--azura-text)", fontWeight: 800, fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "center", padding: "14px 12px" }}>
                 Grandeur Mesuree
               </TableHead>
-              <TableHead style={{ width: "20%", color: "var(--azura-text)", fontWeight: 800, fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "center", padding: "14px 16px" }}>
+              <TableHead style={{ width: "18%", color: "var(--azura-text)", fontWeight: 800, fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "center", padding: "14px 12px" }}>
                 Emplacement
               </TableHead>
-              <TableHead style={{ width: "18%", color: "var(--azura-text)", fontWeight: 800, fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "center", padding: "14px 16px" }}>
+              <TableHead style={{ width: "16%", color: "var(--azura-text)", fontWeight: 800, fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "center", padding: "14px 12px" }}>
                 Valeur Actuelle
               </TableHead>
-              <TableHead style={{ width: "14%", color: "var(--azura-text)", fontWeight: 800, fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "center", padding: "14px 16px" }}>
+              <TableHead style={{ width: "14%", color: "var(--azura-text)", fontWeight: 800, fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "center", padding: "14px 12px" }}>
                 Plage Nominale
               </TableHead>
-              <TableHead style={{ width: "12%", color: "var(--azura-text)", fontWeight: 800, fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "center", padding: "14px 16px" }}>
+              <TableHead style={{ width: "10%", color: "var(--azura-text)", fontWeight: 800, fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "center", padding: "14px 12px" }}>
                 Statut
+              </TableHead>
+              <TableHead style={{ width: "10%", color: "var(--azura-text)", fontWeight: 800, fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "center", padding: "14px 12px" }}>
+                Location
               </TableHead>
             </TableRow>
           </TableHeader>
@@ -528,7 +543,7 @@ export function SensorsKafkaTable({ sensorsMap = {}, thresholdsConfig = null }) 
                 className="hover:bg-white/[0.03]"
               >
                 {/* Colonne 1 : Equipement */}
-                <TableCell style={{ padding: "14px 16px", textAlign: "center" }}>
+                <TableCell style={{ padding: "14px 12px", textAlign: "center" }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
                     <div style={{
                       width: "8px",
@@ -550,7 +565,7 @@ export function SensorsKafkaTable({ sensorsMap = {}, thresholdsConfig = null }) 
                 </TableCell>
 
                 {/* Colonne 2 : Grandeur Mesurée */}
-                <TableCell style={{ padding: "14px 16px", textAlign: "center" }}>
+                <TableCell style={{ padding: "14px 12px", textAlign: "center" }}>
                   <span style={{
                     fontWeight: 700,
                     color: "var(--azura-text)",
@@ -560,13 +575,20 @@ export function SensorsKafkaTable({ sensorsMap = {}, thresholdsConfig = null }) 
                   </span>
                 </TableCell>
 
-                {/* Colonne 3 : Emplacement */}
-                <TableCell style={{ padding: "14px 16px", textAlign: "center", color: "var(--azura-text-muted)", fontSize: "0.84rem", fontWeight: 500 }}>
+                {/* Colonne 3 : Emplacement (Texte Standard Noir / Blanc en Dark Mode) */}
+                <TableCell style={{
+                  padding: "14px 12px",
+                  textAlign: "center",
+                  color: "var(--azura-text)",
+                  fontSize: "0.85rem",
+                  fontWeight: 600,
+                  fontFamily: "'Plus Jakarta Sans', sans-serif"
+                }}>
                   {row.location}
                 </TableCell>
 
                 {/* Colonne 4 : Valeur Actuelle */}
-                <TableCell style={{ padding: "14px 16px", textAlign: "center" }}>
+                <TableCell style={{ padding: "14px 12px", textAlign: "center" }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
                     <span style={{
                       fontWeight: 800,
@@ -587,7 +609,7 @@ export function SensorsKafkaTable({ sensorsMap = {}, thresholdsConfig = null }) 
 
                 {/* Colonne 5 : Plage Nominale */}
                 <TableCell style={{
-                  padding: "14px 16px",
+                  padding: "14px 12px",
                   textAlign: "center",
                   fontFamily: "'JetBrains Mono', monospace",
                   color: "var(--azura-text-muted)",
@@ -597,8 +619,8 @@ export function SensorsKafkaTable({ sensorsMap = {}, thresholdsConfig = null }) 
                   {row.nominalRange}
                 </TableCell>
 
-                {/* Colonne 6 : Statut (Normal en Vert, Haut en Rouge, Bas en Bleu) */}
-                <TableCell style={{ padding: "14px 16px", textAlign: "center" }}>
+                {/* Colonne 6 : Statut */}
+                <TableCell style={{ padding: "14px 12px", textAlign: "center" }}>
                   <span
                     style={{
                       color: row.statusColor,
@@ -610,6 +632,38 @@ export function SensorsKafkaTable({ sensorsMap = {}, thresholdsConfig = null }) 
                   >
                     {row.statusLabel}
                   </span>
+                </TableCell>
+
+                {/* Colonne 7 : Bouton Icone Location (Noir / Blanc selon Dark Mode) */}
+                <TableCell style={{ padding: "14px 12px", textAlign: "center" }}>
+                  <motion.button
+                    type="button"
+                    onClick={() => {
+                      if (onSelectSensorLocation) {
+                        onSelectSensorLocation(row);
+                      }
+                    }}
+                    whileHover={{ scale: 1.2, y: -1 }}
+                    whileTap={{ scale: 0.9 }}
+                    transition={{ type: "spring", stiffness: 500, damping: 20 }}
+                    title={`Localisation de ${row.id} (${row.location})`}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: "32px",
+                      height: "32px",
+                      borderRadius: "8px",
+                      backgroundColor: "transparent",
+                      border: "none",
+                      color: "var(--azura-text)",
+                      cursor: "pointer",
+                      transition: "opacity 0.2s ease, transform 0.2s ease",
+                      outline: "none"
+                    }}
+                  >
+                    <MapPin size={22} weight="regular" style={{ color: "var(--azura-text)" }} />
+                  </motion.button>
                 </TableCell>
               </TableRow>
             ))}

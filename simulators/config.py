@@ -122,34 +122,36 @@ ZONE_GEOLOCATIONS = {
 }
 
 # Liste des 20 capteurs simules actifs (4 zones x 5 types = 20 capteurs, cadence 2.0s)
+# Chaque capteur dispose de ses coordonnees GPS exactes (latitude Y, longitude X) situees dans le polygone de sa zone
 ACTIVE_SENSORS = [
-    # ── ZONE 1 : agadir_serre_1 (5 types) ──
-    {"type": "temperature",  "id": "sensor_temp_001", "loc": "agadir_serre_1",          "interval": 2.0},
-    {"type": "vibration",    "id": "sensor_vib_001",  "loc": "agadir_serre_1",          "interval": 2.0},
-    {"type": "pression",     "id": "sensor_pres_001", "loc": "agadir_serre_1",          "interval": 2.0},
-    {"type": "humidite",     "id": "sensor_hum_001",  "loc": "agadir_serre_1",          "interval": 2.0},
-    {"type": "consommation", "id": "sensor_pow_001",  "loc": "agadir_serre_1",          "interval": 2.0},
+    # ── ZONE 1 : agadir_serre_1 (Agadir, Souss-Massa) ──
+    {"type": "temperature",  "id": "sensor_temp_001", "loc": "agadir_serre_1",          "latitude": 30.2840, "longitude": -9.5070, "interval": 2.0},
+    {"type": "vibration",    "id": "sensor_vib_001",  "loc": "agadir_serre_1",          "latitude": 30.2810, "longitude": -9.5020, "interval": 2.0},
+    {"type": "pression",     "id": "sensor_pres_001", "loc": "agadir_serre_1",          "latitude": 30.2860, "longitude": -9.5040, "interval": 2.0},
+    {"type": "humidite",     "id": "sensor_hum_001",  "loc": "agadir_serre_1",          "latitude": 30.2790, "longitude": -9.5080, "interval": 2.0},
+    {"type": "consommation", "id": "sensor_pow_001",  "loc": "agadir_serre_1",          "latitude": 30.2830, "longitude": -9.4980, "interval": 2.0},
 
-    # ── ZONE 2 : dakhla_station_emballage (5 types) ──
-    {"type": "temperature",  "id": "sensor_temp_002", "loc": "dakhla_station_emballage", "interval": 2.0},
-    {"type": "vibration",    "id": "sensor_vib_002",  "loc": "dakhla_station_emballage", "interval": 2.0},
-    {"type": "pression",     "id": "sensor_pres_002", "loc": "dakhla_station_emballage", "interval": 2.0},
-    {"type": "humidite",     "id": "sensor_hum_002",  "loc": "dakhla_station_emballage", "interval": 2.0},
-    {"type": "consommation", "id": "sensor_pow_002",  "loc": "dakhla_station_emballage", "interval": 2.0},
+    # ── ZONE 2 : dakhla_station_emballage (Dakhla, Oued Ed-Dahab) ──
+    {"type": "temperature",  "id": "sensor_temp_002", "loc": "dakhla_station_emballage", "latitude": 23.7140, "longitude": -15.9220, "interval": 2.0},
+    {"type": "vibration",    "id": "sensor_vib_002",  "loc": "dakhla_station_emballage", "latitude": 23.7110, "longitude": -15.9170, "interval": 2.0},
+    {"type": "pression",     "id": "sensor_pres_002", "loc": "dakhla_station_emballage", "latitude": 23.7160, "longitude": -15.9190, "interval": 2.0},
+    {"type": "humidite",     "id": "sensor_hum_002",  "loc": "dakhla_station_emballage", "latitude": 23.7090, "longitude": -15.9230, "interval": 2.0},
+    {"type": "consommation", "id": "sensor_pow_002",  "loc": "dakhla_station_emballage", "latitude": 23.7130, "longitude": -15.9130, "interval": 2.0},
 
-    # ── ZONE 3 : kenitra_station_filtrage (5 types) ──
-    {"type": "temperature",  "id": "sensor_temp_003", "loc": "kenitra_station_filtrage", "interval": 2.0},
-    {"type": "vibration",    "id": "sensor_vib_003",  "loc": "kenitra_station_filtrage", "interval": 2.0},
-    {"type": "pression",     "id": "sensor_pres_003", "loc": "kenitra_station_filtrage", "interval": 2.0},
-    {"type": "humidite",     "id": "sensor_hum_003",  "loc": "kenitra_station_filtrage", "interval": 2.0},
-    {"type": "consommation", "id": "sensor_pow_003",  "loc": "kenitra_station_filtrage", "interval": 2.0},
+    # ── ZONE 3 : kenitra_station_filtrage (Kenitra, Rabat-Sale-Kenitra) ──
+    {"type": "temperature",  "id": "sensor_temp_003", "loc": "kenitra_station_filtrage", "latitude": 34.2540, "longitude": -6.5720, "interval": 2.0},
+    {"type": "vibration",    "id": "sensor_vib_003",  "loc": "kenitra_station_filtrage", "latitude": 34.2510, "longitude": -6.5670, "interval": 2.0},
+    {"type": "pression",     "id": "sensor_pres_003", "loc": "kenitra_station_filtrage", "latitude": 34.2560, "longitude": -6.5690, "interval": 2.0},
+    {"type": "humidite",     "id": "sensor_hum_003",  "loc": "kenitra_station_filtrage", "latitude": 34.2490, "longitude": -6.5730, "interval": 2.0},
+    {"type": "consommation", "id": "sensor_pow_003",  "loc": "kenitra_station_filtrage", "latitude": 34.2530, "longitude": -6.5630, "interval": 2.0},
 
-    # ── ZONE 4 : tangier_med_hub (5 types) ──
-    {"type": "temperature",  "id": "sensor_temp_004", "loc": "tangier_med_hub",          "interval": 2.0},
-    {"type": "vibration",    "id": "sensor_vib_004",  "loc": "tangier_med_hub",          "interval": 2.0},
-    {"type": "pression",     "id": "sensor_pres_004", "loc": "tangier_med_hub",          "interval": 2.0},
-    {"type": "humidite",     "id": "sensor_hum_004",  "loc": "tangier_med_hub",          "interval": 2.0},
-    {"type": "consommation", "id": "sensor_pow_004",  "loc": "tangier_med_hub",          "interval": 2.0},
+    # ── ZONE 4 : tangier_med_hub (Tanger Med, Hub Export) ──
+    {"type": "temperature",  "id": "sensor_temp_004", "loc": "tangier_med_hub",          "latitude": 35.8840, "longitude": -5.5020, "interval": 2.0},
+    {"type": "vibration",    "id": "sensor_vib_004",  "loc": "tangier_med_hub",          "latitude": 35.8810, "longitude": -5.4970, "interval": 2.0},
+    {"type": "pression",     "id": "sensor_pres_004", "loc": "tangier_med_hub",          "latitude": 35.8860, "longitude": -5.4990, "interval": 2.0},
+    {"type": "humidite",     "id": "sensor_hum_004",  "loc": "tangier_med_hub",          "latitude": 35.8790, "longitude": -5.5030, "interval": 2.0},
+    {"type": "consommation", "id": "sensor_pow_004",  "loc": "tangier_med_hub",          "latitude": 35.8830, "longitude": -5.4930, "interval": 2.0},
 ]
+
 
 

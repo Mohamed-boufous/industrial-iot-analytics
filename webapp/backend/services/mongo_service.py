@@ -96,7 +96,7 @@ class MongoService:
             try:
                 docs = list(db[settings.COLLECTION_RAW].find(
                     {"device_id": dev_id},
-                    {"_id": 0, "device_id": 1, "device_type": 1, "location": 1, "timestamp": 1, "value": 1, "unit": 1, "status": 1}
+                    {"_id": 0, "device_id": 1, "device_type": 1, "location": 1, "latitude": 1, "longitude": 1, "timestamp": 1, "value": 1, "unit": 1, "status": 1}
                 ).sort("timestamp", DESCENDING).limit(limit_per_sensor))
                 
                 docs.reverse()
