@@ -16,7 +16,7 @@ const SENSOR_TYPE_CONFIGS = {
     critical_min: 90.0,
     fault_floor: -20.0,
     fault_ceiling: 150.0,
-    defaultIds: ["sensor_temp_001", "sensor_temp_002", "sensor_temp_003"]
+    defaultIds: ["sensor_temp_001", "sensor_temp_002", "sensor_temp_003", "sensor_temp_004"]
   },
   vibration: {
     label: "Vibration",
@@ -25,7 +25,7 @@ const SENSOR_TYPE_CONFIGS = {
     critical_min: 8.0,
     fault_floor: 0.0,
     fault_ceiling: 25.0,
-    defaultIds: ["sensor_vib_001", "sensor_vib_002", "sensor_vib_003"]
+    defaultIds: ["sensor_vib_001", "sensor_vib_002", "sensor_vib_003", "sensor_vib_004"]
   },
   pression: {
     label: "Pression",
@@ -34,7 +34,7 @@ const SENSOR_TYPE_CONFIGS = {
     critical_min: 12.0,
     fault_floor: 0.0,
     fault_ceiling: 30.0,
-    defaultIds: ["sensor_pres_001", "sensor_pres_002", "sensor_pres_003"]
+    defaultIds: ["sensor_pres_001", "sensor_pres_002", "sensor_pres_003", "sensor_pres_004"]
   },
   humidite: {
     label: "Humidite",
@@ -43,7 +43,7 @@ const SENSOR_TYPE_CONFIGS = {
     critical_min: 85.0,
     fault_floor: 0.0,
     fault_ceiling: 100.0,
-    defaultIds: ["sensor_hum_001", "sensor_hum_002", "sensor_hum_003"]
+    defaultIds: ["sensor_hum_001", "sensor_hum_002", "sensor_hum_003", "sensor_hum_004"]
   },
   consommation: {
     label: "Puissance Electrique",
@@ -52,7 +52,7 @@ const SENSOR_TYPE_CONFIGS = {
     critical_min: 700.0,
     fault_floor: 0.0,
     fault_ceiling: 2000.0,
-    defaultIds: ["sensor_pow_001", "sensor_pow_002", "sensor_pow_003"]
+    defaultIds: ["sensor_pow_001", "sensor_pow_002", "sensor_pow_003", "sensor_pow_004"]
   }
 };
 
@@ -476,7 +476,7 @@ export default function SensorsDashboard() {
             fontFamily: "'Plus Jakarta Sans', sans-serif"
           }}>
             <Cpu size={17} weight="bold" style={{ color: "#0284c7" }} />
-            <span>15/15 Capteurs Actifs</span>
+            <span>20/20 Capteurs Actifs</span>
           </div>
         </div>
 

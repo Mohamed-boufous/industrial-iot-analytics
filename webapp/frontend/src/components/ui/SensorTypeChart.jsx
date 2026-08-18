@@ -2,12 +2,13 @@ import React, { useState, useRef, useMemo } from "react";
 import { ArrowUp, ArrowDown, CheckCircle, Radio } from "@phosphor-icons/react";
 
 /**
- * Palette de couleurs distinctes et haute visibilité pour différencier les 3 capteurs.
+ * Palette de 4 couleurs distinctes et haute visibilite pour differencier les 4 capteurs (1 par site).
  */
 const SENSOR_LINE_COLORS = [
-  { stroke: "#06b6d4", glow: "rgba(6, 182, 212, 0.45)", fill: "rgba(6, 182, 212, 0.10)", name: "Capteur 1" },
-  { stroke: "#a855f7", glow: "rgba(168, 85, 247, 0.45)", fill: "rgba(168, 85, 247, 0.10)", name: "Capteur 2" },
-  { stroke: "#f59e0b", glow: "rgba(245, 158, 11, 0.45)", fill: "rgba(245, 158, 11, 0.10)", name: "Capteur 3" }
+  { stroke: "#06b6d4", glow: "rgba(6, 182, 212, 0.45)", fill: "rgba(6, 182, 212, 0.10)", name: "Capteur 1 (Agadir)" },
+  { stroke: "#a855f7", glow: "rgba(168, 85, 247, 0.45)", fill: "rgba(168, 85, 247, 0.10)", name: "Capteur 2 (Dakhla)" },
+  { stroke: "#f59e0b", glow: "rgba(245, 158, 11, 0.45)", fill: "rgba(245, 158, 11, 0.10)", name: "Capteur 3 (Kenitra)" },
+  { stroke: "#10b981", glow: "rgba(16, 185, 129, 0.45)", fill: "rgba(16, 185, 129, 0.10)", name: "Capteur 4 (Tanger Med)" }
 ];
 
 /**

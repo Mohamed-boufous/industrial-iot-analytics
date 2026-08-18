@@ -44,7 +44,7 @@ class IoTSimulator:
 
     def _setup_fault_scenarios(self):
         """Configure le scénario temporel exact :
-        - 4 capteurs choisis au hasard parmi les 15.
+        - 4 capteurs choisis au hasard parmi les 20.
         - t = 0s à 60s (0-1 min) : 0 alerte dans Kafka iot-alerts.
         - t = 60s : Déclenchement simultané des 4 pannes (2 temporaires, 2 permanentes).
         - t = 180s (3 min) : Guérison immédiate des 2 pannes temporaires.
@@ -67,7 +67,7 @@ class IoTSimulator:
         
         print("\n" + "="*75)
         print("  [SCÉNARIO TEMPOREL CONFIGURÉ (Strict 1 à 3 min)]")
-        print("  - t = 0s à 60s (0-1 min) : Tous les 15 capteurs sont 100% NORMAUX (0 alerte)")
+        print("  - t = 0s à 60s (0-1 min) : Tous les 20 capteurs sont 100% NORMAUX (0 alerte)")
         for s_id, sc in self.fault_scenarios.items():
             kind = "TEMPORAIRE (guérie à t = 180s)" if sc["is_temporary"] else "PERMANENTE (active indéfiniment)"
             print(f"  - Capteur {s_id} : Panne {kind} déclenchée à t = 60s")
@@ -175,6 +175,15 @@ class IoTSimulator:
         print(f"--- Démarrage du Simulateur IoT (Taux d'anomalies: {self.anomaly_rate * 100}%) ---")
         last_sent_time = {sensor["id"]: 0.0 for sensor in self.active_sensors}
         
+        # Taux de décharge réaliste par type de grandeur physique
+        TYPE_DISCHARGE_RATES = {
+            "vibration": 0.008,    # Échantillonnage dynamique intensif
+            "consommation": 0.006, # Mesure continue de puissance
+            "temperature": 0.004,  # Sonde thermo-résistive
+            "pression": 0.003,     # Transducteur piézo-électrique
+            "humidite": 0.001      # Sonde capacitive très basse consommation
+        }
+        
         try:
             while True:
                 current_now = time.time()
@@ -187,16 +196,7 @@ class IoTSimulator:
                     
                     if current_now - last_sent_time[sensor_id] >= interval:
                         state = self.states[sensor_id]
-                        # Décharge progressive et douce selon la consommation matérielle du capteur
-                        DISCHARGE_RATES = {
-                            "sensor_vib_002": 0.010,  # Vibration haute fréquence
-                            "sensor_pow_001": 0.008,  # Puissance Transformateur
-                            "sensor_vib_001": 0.006,  # Vibration Moteur 1
-                            "sensor_temp_003": 0.004, # Température Chambre 2
-                            "sensor_pres_001": 0.003, # Pression hydraulique
-                            "sensor_hum_001": 0.001,  # Humidité standard (très économe)
-                        }
-                        rate = DISCHARGE_RATES.get(sensor_id, 0.001)
+                        rate = TYPE_DISCHARGE_RATES.get(sensor_type, 0.002)
                         state["battery_level"] = max(2.0, state["battery_level"] - rate)
                         
                         # Génération de la valeur physique

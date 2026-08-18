@@ -25,8 +25,8 @@ class MongoService:
         # Agrégation des status dans raw_measurements (si présent) ou comptage simple
         return {
             "total_raw_measurements": total_raw,
-            "monitored_sensors_count": 15,
-            "active_locations_count": 5
+            "monitored_sensors_count": 20,
+            "active_locations_count": 4
         }
 
     def get_alerts_by_type(self) -> list[dict]:
@@ -79,17 +79,17 @@ class MongoService:
 
     def get_all_sensors_recent_history(self, limit_per_sensor: int = 60) -> dict[str, list[dict]]:
         """
-        Retourne l'historique récent des mesures pour chacun des 15 capteurs depuis raw_measurements.
+        Retourne l'historique récent des mesures pour chacun des 20 capteurs depuis raw_measurements.
         Permet de remplir l'axe temporel X immédiatement dès le chargement ou refresh de la page.
         """
         db = self._get_db()
         history = {}
         all_sensor_ids = [
-            "sensor_temp_001", "sensor_temp_002", "sensor_temp_003",
-            "sensor_vib_001", "sensor_vib_002", "sensor_vib_003",
-            "sensor_pres_001", "sensor_pres_002", "sensor_pres_003",
-            "sensor_hum_001", "sensor_hum_002", "sensor_hum_003",
-            "sensor_pow_001", "sensor_pow_002", "sensor_pow_003"
+            "sensor_temp_001", "sensor_temp_002", "sensor_temp_003", "sensor_temp_004",
+            "sensor_vib_001", "sensor_vib_002", "sensor_vib_003", "sensor_vib_004",
+            "sensor_pres_001", "sensor_pres_002", "sensor_pres_003", "sensor_pres_004",
+            "sensor_hum_001", "sensor_hum_002", "sensor_hum_003", "sensor_hum_004",
+            "sensor_pow_001", "sensor_pow_002", "sensor_pow_003", "sensor_pow_004"
         ]
         
         for dev_id in all_sensor_ids:
@@ -157,7 +157,7 @@ class MongoService:
             "total_alerts": total_alerts,
             "compliance_rate": compliance_rate,
             "top_problematic_sensor": top_sensor,
-            "monitored_sensors_count": 15
+            "monitored_sensors_count": 20
         }
 
     def get_filtered_alerts(self, start_date: str = None, end_date: str = None, device_id: str = None, limit: int = 200) -> list[dict]:
@@ -305,28 +305,15 @@ class MongoService:
                 time_query["$lte"] = end_date
             query_alerts["timestamp"] = time_query
 
-        # Mapping canonique des emplacements vers les villes / régions d'exploitation AzurA
+        # Mapping canonique des 4 zones d'exploitation AzurA
         LOCATION_TO_CITY = {
             "agadir_serre_1": "Agadir",
-            "agadir_chambre_froide_2": "Agadir",
-            "agadir_station_pompage": "Agadir",
-            "agadir_reseau_principal": "Agadir",
-            "agadir_entrepot_central": "Agadir",
-            "groupe_secours_agadir": "Agadir",
-            "transformateur_general": "Agadir",
-            "stockage_legumes_ch1": "Agadir",
-            "stockage_legumes_ch2": "Agadir",
-            "zone_pompage_nord": "Agadir",
-            "conditionnement_chambre_2": "Agadir",
             "dakhla_station_emballage": "Dakhla",
-            "dakhla_dessalement_p1": "Dakhla",
-            "station_solaire_dakhla": "Dakhla",
-            "tangier_med_hub": "Tanger Med",
-            "casablanca_logistique": "Casablanca",
-            "kenitra_station_filtrage": "Kenitra"
+            "kenitra_station_filtrage": "Kenitra",
+            "tangier_med_hub": "Tanger Med"
         }
 
-        ALL_CITIES = ["Agadir", "Dakhla", "Tanger Med", "Casablanca", "Kenitra"]
+        ALL_CITIES = ["Agadir", "Dakhla", "Kenitra", "Tanger Med"]
 
         pipeline = [
             {"$match": query_alerts},
@@ -348,16 +335,14 @@ class MongoService:
             # Détermination de la ville
             resolved_city = LOCATION_TO_CITY.get(loc_id)
             if not resolved_city:
-                if "agadir" in loc_id or "serre" in loc_id or "stockage" in loc_id or "transformateur" in loc_id:
+                if "agadir" in loc_id or "serre" in loc_id:
                     resolved_city = "Agadir"
                 elif "dakhla" in loc_id:
                     resolved_city = "Dakhla"
-                elif "tang" in loc_id:
-                    resolved_city = "Tanger Med"
-                elif "casa" in loc_id:
-                    resolved_city = "Casablanca"
-                elif "kenitra" in loc_id:
+                elif "kenitra" in loc_id or "filtrage" in loc_id:
                     resolved_city = "Kenitra"
+                elif "tang" in loc_id or "med" in loc_id:
+                    resolved_city = "Tanger Med"
                 else:
                     resolved_city = "Agadir"
 
@@ -397,14 +382,10 @@ class MongoService:
             query_raw["timestamp"] = time_query
 
         LOCATION_LABELS = {
-            "tangier_med_hub": "Hub Logistique Tanger Med",
-            "agadir_entrepot_central": "Entrepot Central (Agadir)",
-            "transformateur_general": "Transformateur General",
-            "station_solaire_dakhla": "Station Solaire Dakhla",
-            "agadir_serre_1": "Serre Maraichere 1 (Agadir)",
-            "stockage_legumes_ch1": "Chambre Stockage Legumes 1",
-            "zone_pompage_nord": "Station Pompage Nord",
-            "conditionnement_chambre_2": "Chambre Conditionnement 2"
+            "agadir_serre_1": "Serre 1 (Agadir)",
+            "dakhla_station_emballage": "Station Emballage (Dakhla)",
+            "kenitra_station_filtrage": "Station Filtrage (Kenitra)",
+            "tangier_med_hub": "Hub Logistique Tanger Med"
         }
 
         TYPE_LABELS = {

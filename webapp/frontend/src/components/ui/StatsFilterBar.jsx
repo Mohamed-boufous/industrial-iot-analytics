@@ -3,22 +3,27 @@ import { motion } from 'framer-motion';
 import { Funnel, ArrowClockwise, Check } from '@phosphor-icons/react';
 
 const SENSORS_LIST = [
-  { id: 'ALL', label: 'Tous les 15 capteurs' },
-  { id: 'sensor_temp_001', label: 'Capteur Temp 001 (Ligne A)' },
-  { id: 'sensor_temp_002', label: 'Capteur Temp 002 (Ligne B)' },
-  { id: 'sensor_temp_003', label: 'Capteur Temp 003 (Ligne C)' },
-  { id: 'sensor_vib_001', label: 'Capteur Vib 001 (Moteur 1)' },
-  { id: 'sensor_vib_002', label: 'Capteur Vib 002 (Moteur 2)' },
-  { id: 'sensor_vib_003', label: 'Capteur Vib 003 (Moteur 3)' },
-  { id: 'sensor_pres_001', label: 'Capteur Pression 001' },
-  { id: 'sensor_pres_002', label: 'Capteur Pression 002' },
-  { id: 'sensor_pres_003', label: 'Capteur Pression 003' },
-  { id: 'sensor_hum_001', label: 'Capteur Humidite 001' },
-  { id: 'sensor_hum_002', label: 'Capteur Humidite 002' },
-  { id: 'sensor_hum_003', label: 'Capteur Humidite 003' },
-  { id: 'sensor_pow_001', label: 'Capteur Puissance 001' },
-  { id: 'sensor_pow_002', label: 'Capteur Puissance 002' },
-  { id: 'sensor_pow_003', label: 'Capteur Puissance 003' }
+  { id: 'ALL', label: 'Tous les 20 capteurs' },
+  { id: 'sensor_temp_001', label: 'Temp 001 (Agadir)' },
+  { id: 'sensor_temp_002', label: 'Temp 002 (Dakhla)' },
+  { id: 'sensor_temp_003', label: 'Temp 003 (Kenitra)' },
+  { id: 'sensor_temp_004', label: 'Temp 004 (Tanger Med)' },
+  { id: 'sensor_vib_001', label: 'Vibration 001 (Agadir)' },
+  { id: 'sensor_vib_002', label: 'Vibration 002 (Dakhla)' },
+  { id: 'sensor_vib_003', label: 'Vibration 003 (Kenitra)' },
+  { id: 'sensor_vib_004', label: 'Vibration 004 (Tanger Med)' },
+  { id: 'sensor_pres_001', label: 'Pression 001 (Agadir)' },
+  { id: 'sensor_pres_002', label: 'Pression 002 (Dakhla)' },
+  { id: 'sensor_pres_003', label: 'Pression 003 (Kenitra)' },
+  { id: 'sensor_pres_004', label: 'Pression 004 (Tanger Med)' },
+  { id: 'sensor_hum_001', label: 'Humidite 001 (Agadir)' },
+  { id: 'sensor_hum_002', label: 'Humidite 002 (Dakhla)' },
+  { id: 'sensor_hum_003', label: 'Humidite 003 (Kenitra)' },
+  { id: 'sensor_hum_004', label: 'Humidite 004 (Tanger Med)' },
+  { id: 'sensor_pow_001', label: 'Puissance 001 (Agadir)' },
+  { id: 'sensor_pow_002', label: 'Puissance 002 (Dakhla)' },
+  { id: 'sensor_pow_003', label: 'Puissance 003 (Kenitra)' },
+  { id: 'sensor_pow_004', label: 'Puissance 004 (Tanger Med)' }
 ];
 
 const PRESETS = [

@@ -28,23 +28,35 @@ const SENSOR_TYPE_CONFIGS = {
   consommation: { label: "Puissance Electrique", unit: "kW", normal_range: [100.0, 500.0] }
 };
 
-// 15 Capteurs actifs surveillés
+// 20 Capteurs actifs surveilles repartis sur les 4 zones (5 par zone)
 const ALL_SENSORS_METADATA = [
-  { id: "sensor_temp_001", type: "temperature", loc: "agadir_serre_1", color: "#06b6d4" },
-  { id: "sensor_temp_002", type: "temperature", loc: "dakhla_station_pompage", color: "#a855f7" },
-  { id: "sensor_temp_003", type: "temperature", loc: "chichaoua_parc_solaire", color: "#f59e0b" },
-  { id: "sensor_vib_001", type: "vibration", loc: "agadir_serre_1", color: "#06b6d4" },
-  { id: "sensor_vib_002", type: "vibration", loc: "dakhla_station_pompage", color: "#a855f7" },
-  { id: "sensor_vib_003", type: "vibration", loc: "chichaoua_parc_solaire", color: "#f59e0b" },
-  { id: "sensor_pres_001", type: "pression", loc: "agadir_serre_1", color: "#06b6d4" },
-  { id: "sensor_pres_002", type: "pression", loc: "dakhla_station_pompage", color: "#a855f7" },
-  { id: "sensor_pres_003", type: "pression", loc: "chichaoua_parc_solaire", color: "#f59e0b" },
-  { id: "sensor_hum_001", type: "humidite", loc: "agadir_serre_1", color: "#06b6d4" },
-  { id: "sensor_hum_002", type: "humidite", loc: "dakhla_station_pompage", color: "#a855f7" },
-  { id: "sensor_hum_003", type: "humidite", loc: "chichaoua_parc_solaire", color: "#f59e0b" },
-  { id: "sensor_pow_001", type: "consommation", loc: "transformateur_general", color: "#06b6d4" },
-  { id: "sensor_pow_002", type: "consommation", loc: "groupe_secours_agadir", color: "#a855f7" },
-  { id: "sensor_pow_003", type: "consommation", loc: "station_solaire_dakhla", color: "#f59e0b" }
+  // ── ZONE 1 : Agadir (agadir_serre_1) ──
+  { id: "sensor_temp_001", type: "temperature",  loc: "agadir_serre_1",          color: "#06b6d4" },
+  { id: "sensor_vib_001",  type: "vibration",    loc: "agadir_serre_1",          color: "#06b6d4" },
+  { id: "sensor_pres_001", type: "pression",     loc: "agadir_serre_1",          color: "#06b6d4" },
+  { id: "sensor_hum_001",  type: "humidite",     loc: "agadir_serre_1",          color: "#06b6d4" },
+  { id: "sensor_pow_001",  type: "consommation", loc: "agadir_serre_1",          color: "#06b6d4" },
+
+  // ── ZONE 2 : Dakhla (dakhla_station_emballage) ──
+  { id: "sensor_temp_002", type: "temperature",  loc: "dakhla_station_emballage", color: "#a855f7" },
+  { id: "sensor_vib_002",  type: "vibration",    loc: "dakhla_station_emballage", color: "#a855f7" },
+  { id: "sensor_pres_002", type: "pression",     loc: "dakhla_station_emballage", color: "#a855f7" },
+  { id: "sensor_hum_002",  type: "humidite",     loc: "dakhla_station_emballage", color: "#a855f7" },
+  { id: "sensor_pow_002",  type: "consommation", loc: "dakhla_station_emballage", color: "#a855f7" },
+
+  // ── ZONE 3 : Kenitra (kenitra_station_filtrage) ──
+  { id: "sensor_temp_003", type: "temperature",  loc: "kenitra_station_filtrage", color: "#f59e0b" },
+  { id: "sensor_vib_003",  type: "vibration",    loc: "kenitra_station_filtrage", color: "#f59e0b" },
+  { id: "sensor_pres_003", type: "pression",     loc: "kenitra_station_filtrage", color: "#f59e0b" },
+  { id: "sensor_hum_003",  type: "humidite",     loc: "kenitra_station_filtrage", color: "#f59e0b" },
+  { id: "sensor_pow_003",  type: "consommation", loc: "kenitra_station_filtrage", color: "#f59e0b" },
+
+  // ── ZONE 4 : Tanger Med (tangier_med_hub) ──
+  { id: "sensor_temp_004", type: "temperature",  loc: "tangier_med_hub",          color: "#10b981" },
+  { id: "sensor_vib_004",  type: "vibration",    loc: "tangier_med_hub",          color: "#10b981" },
+  { id: "sensor_pres_004", type: "pression",     loc: "tangier_med_hub",          color: "#10b981" },
+  { id: "sensor_hum_004",  type: "humidite",     loc: "tangier_med_hub",          color: "#10b981" },
+  { id: "sensor_pow_004",  type: "consommation", loc: "tangier_med_hub",          color: "#10b981" },
 ];
 
 export function SensorsKafkaTable({ sensorsMap = {}, thresholdsConfig = null }) {
