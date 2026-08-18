@@ -47,17 +47,45 @@ export default function StatsKpiCards({ kpis = {}, isLoading = false }) {
   ];
 
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))',
-        gap: '16px',
-        marginBottom: '24px'
-      }}
-    >
-      {cards.map((card, idx) => {
-        const IconComponent = card.icon;
-        return (
+    <div style={{ marginBottom: '1.75rem' }}>
+      {/* Titre de la Section 1 : Indicateurs Clés Globaux */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{ width: '4px', height: '18px', backgroundColor: '#2563eb', borderRadius: '2px' }} />
+          <h2 style={{
+            fontSize: '1rem',
+            fontWeight: 800,
+            color: 'var(--azura-text)',
+            fontFamily: "'Plus Jakarta Sans', sans-serif",
+            textTransform: 'uppercase',
+            letterSpacing: '0.6px',
+            margin: 0
+          }}>
+            Indicateurs Cles Globaux (KPIs)
+          </h2>
+        </div>
+        <span style={{
+          fontSize: '0.75rem',
+          fontWeight: 700,
+          color: 'var(--azura-text-muted)',
+          backgroundColor: 'rgba(0, 0, 0, 0.04)',
+          padding: '3px 10px',
+          borderRadius: '9999px'
+        }}>
+          4 Indicateurs
+        </span>
+      </div>
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))',
+          gap: '16px'
+        }}
+      >
+        {cards.map((card, idx) => {
+          const IconComponent = card.icon;
+          return (
           <motion.div
             key={idx}
             initial={{ opacity: 0, y: 14 }}
@@ -146,6 +174,7 @@ export default function StatsKpiCards({ kpis = {}, isLoading = false }) {
           </motion.div>
         );
       })}
+      </div>
     </div>
   );
 }

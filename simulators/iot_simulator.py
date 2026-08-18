@@ -84,9 +84,10 @@ class IoTSimulator:
             random_days = random.randint(0, 365)
             cal_date = (date.today() - timedelta(days=random_days)).strftime("%Y-%m-%d")
             
+            # Au demarrage initial, TOUS les capteurs commencent a 100.0%
             self.states[s_id] = {
                 "current_value": initial_value,
-                "battery_level": round(random.uniform(90.0, 99.0), 1),
+                "battery_level": 100.0,
                 "calibration_date": cal_date
             }
 
@@ -186,8 +187,17 @@ class IoTSimulator:
                     
                     if current_now - last_sent_time[sensor_id] >= interval:
                         state = self.states[sensor_id]
-                        # Niveau de batterie maintenu stable (entre 85% et 99%)
-                        state["battery_level"] = max(85.0, round(state["battery_level"] - 0.0001, 1))
+                        # Décharge progressive et douce selon la consommation matérielle du capteur
+                        DISCHARGE_RATES = {
+                            "sensor_vib_002": 0.010,  # Vibration haute fréquence
+                            "sensor_pow_001": 0.008,  # Puissance Transformateur
+                            "sensor_vib_001": 0.006,  # Vibration Moteur 1
+                            "sensor_temp_003": 0.004, # Température Chambre 2
+                            "sensor_pres_001": 0.003, # Pression hydraulique
+                            "sensor_hum_001": 0.001,  # Humidité standard (très économe)
+                        }
+                        rate = DISCHARGE_RATES.get(sensor_id, 0.001)
+                        state["battery_level"] = max(2.0, state["battery_level"] - rate)
                         
                         # Génération de la valeur physique
                         val = self.generate_reading(sensor_id, sensor_type)

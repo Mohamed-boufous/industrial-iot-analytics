@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ChartLineUp, Database } from '@phosphor-icons/react';
+import StrokeText from '../components/ui/StrokeText';
 import StatsFilterBar from '../components/ui/StatsFilterBar';
 import StatsKpiCards from '../components/ui/StatsKpiCards';
-import StatsChartsGrid from '../components/ui/StatsChartsGrid';
+import StatsPhysicalMetricsCards from '../components/ui/StatsPhysicalMetricsCards';
+import StatsBatteryHealthTable from '../components/ui/StatsBatteryHealthTable';
+import StatsLocationIncidentsChart from '../components/ui/StatsLocationIncidentsChart';
 import StatsDataTable from '../components/ui/StatsDataTable';
 
 export default function StatsDashboard() {
@@ -18,6 +21,9 @@ export default function StatsDashboard() {
   const [alertsList, setAlertsList] = useState([]);
   const [topSensors, setTopSensors] = useState([]);
   const [alertsByType, setAlertsByType] = useState([]);
+  const [physicalMetrics, setPhysicalMetrics] = useState([]);
+  const [locationIncidents, setLocationIncidents] = useState([]);
+  const [batteryCritical, setBatteryCritical] = useState([]);
 
   // Chargement des donnees analytiques filtrées depuis l API MongoDB FastAPI
   const fetchFilteredData = useCallback(async () => {
@@ -28,13 +34,16 @@ export default function StatsDashboard() {
       if (endDate) queryParams.append('end_date', endDate);
       if (selectedSensor && selectedSensor !== 'ALL') queryParams.append('device_id', selectedSensor);
 
-      // Fetch parallele des 5 endpoints d aggregation
-      const [resKpis, resAlerts, resRaw, resTop, resByType] = await Promise.all([
+      // Fetch parallele des 8 endpoints d aggregation
+      const [resKpis, resAlerts, resRaw, resTop, resByType, resPhysical, resLoc, resBat] = await Promise.all([
         fetch(`/api/stats/filtered-kpis?${queryParams.toString()}`),
         fetch(`/api/stats/filtered-alerts?${queryParams.toString()}`),
         fetch(`/api/stats/filtered-raw?${queryParams.toString()}`),
         fetch('/api/stats/top-problematic?limit=5'),
-        fetch('/api/stats/alerts-by-type')
+        fetch('/api/stats/alerts-by-type'),
+        fetch(`/api/stats/physical-metrics?${queryParams.toString()}`),
+        fetch(`/api/stats/alerts-by-location?${queryParams.toString()}`),
+        fetch(`/api/stats/critical-battery?${queryParams.toString()}`)
       ]);
 
       if (resKpis.ok) {
@@ -61,6 +70,21 @@ export default function StatsDashboard() {
         const dataByType = await resByType.json();
         setAlertsByType(dataByType || []);
       }
+
+      if (resPhysical.ok) {
+        const dataPhysical = await resPhysical.json();
+        setPhysicalMetrics(dataPhysical || []);
+      }
+
+      if (resLoc.ok) {
+        const dataLoc = await resLoc.json();
+        setLocationIncidents(dataLoc || []);
+      }
+
+      if (resBat.ok) {
+        const dataBat = await resBat.json();
+        setBatteryCritical(dataBat || []);
+      }
     } catch (error) {
       console.error('Erreur chargement statistiques MongoDB:', error);
     } finally {
@@ -68,10 +92,10 @@ export default function StatsDashboard() {
     }
   }, [startDate, endDate, selectedSensor]);
 
-  // Chargement initial au montage et au changement de raccourci
+  // Chargement automatique a chaque changement de filtre (dates, capteur, raccourci)
   useEffect(() => {
     fetchFilteredData();
-  }, [selectedPreset]);
+  }, [fetchFilteredData, selectedPreset]);
 
   // Reinitialisation des filtres
   const handleReset = () => {
@@ -83,37 +107,95 @@ export default function StatsDashboard() {
   };
 
   return (
-    <div style={{ padding: '1.5rem', maxWidth: '1440px', margin: '0 auto' }}>
-      {/* En-tete de la page Statistiques */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '12px' }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <ChartLineUp size={30} weight="bold" style={{ color: 'var(--azura-primary)' }} />
-            <h1 style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--azura-text)', fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
-              Statistiques & Historique Analytique
-            </h1>
-          </div>
-          <p style={{ color: 'var(--azura-text-muted)', fontSize: '0.88rem', marginTop: '4px', fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
-            Supervision rétrospective basée sur les deux collections MongoDB (<code>raw_measurements</code> & <code>alerts_history</code>).
-          </p>
-        </div>
-
-        {/* Badge Indicateur de Base de Donnees */}
+    <div style={{ maxWidth: '1440px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+      {/* En-tete Anime avec Titre Trace StrokeText Centre */}
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        textAlign: 'center',
+        padding: '12px 0 6px 0',
+        width: '100%'
+      }}>
+        {/* Badge Categorie Creatif avec Animation StrokeText */}
         <div style={{
           display: 'inline-flex',
           alignItems: 'center',
           gap: '8px',
-          padding: '8px 16px',
-          borderRadius: '12px',
+          padding: '5px 18px',
+          borderRadius: '9999px',
           backgroundColor: 'rgba(2, 132, 199, 0.08)',
           border: '1px solid rgba(2, 132, 199, 0.25)',
-          color: '#0369a1',
-          fontSize: '0.82rem',
-          fontWeight: 750,
-          fontFamily: "'Plus Jakarta Sans', sans-serif"
+          boxShadow: '0 0 16px rgba(2, 132, 199, 0.12)',
+          marginBottom: '0.75rem',
+          backdropFilter: 'blur(8px)',
+          transition: 'all 0.3s ease'
         }}>
-          <Database size={17} weight="bold" />
-          <span>MongoDB Cluster Sharded</span>
+          {/* Point Pulse indicateur Bleu/Cyan */}
+          <span style={{
+            position: 'relative',
+            display: 'flex',
+            width: '8px',
+            height: '8px'
+          }}>
+            <span style={{
+              position: 'absolute',
+              width: '100%',
+              height: '100%',
+              borderRadius: '50%',
+              backgroundColor: '#0284c7',
+              opacity: 0.75,
+              animation: 'ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite'
+            }} />
+            <span style={{
+              position: 'relative',
+              display: 'inline-flex',
+              borderRadius: '50%',
+              width: '8px',
+              height: '8px',
+              backgroundColor: '#0284c7',
+              boxShadow: '0 0 8px #0284c7'
+            }} />
+          </span>
+
+          {/* Texte anime StrokeText pour Badge */}
+          <StrokeText
+            text="STATISTIQUES & ANALYTIQUE"
+            strokeColor="#0284c7"
+            fillColor="#0284c7"
+            strokeWidth={1.0}
+            drawDuration={1.2}
+            fillDelay={0.15}
+            stagger={0.03}
+            ease="power2.out"
+            trigger="mount"
+            fillMode="wipe"
+            fontSize={12}
+            fontWeight={800}
+            letterSpacing={1.2}
+            style={{ display: 'inline-flex', width: 'auto' }}
+          />
+        </div>
+
+        {/* Titre StrokeText Principal Interactif Centre */}
+        <div style={{ width: '100%', maxWidth: '780px', display: 'flex', justifyContent: 'center', margin: '0 auto' }}>
+          <StrokeText
+            text="Statistiques & Tendances Globales"
+            strokeColor="var(--azura-text)"
+            fillColor="var(--azura-text)"
+            strokeWidth={1.2}
+            drawDuration={1.6}
+            fillDelay={0.2}
+            stagger={0.04}
+            ease="power2.out"
+            trigger="mount"
+            fillMode="wipe"
+            fontSize={36}
+            fontWeight={800}
+            letterSpacing={-1}
+            style={{ width: '100%' }}
+          />
         </div>
       </div>
 
@@ -135,15 +217,16 @@ export default function StatsDashboard() {
       {/* 2. Cartes de KPIs Synthetiques 3D */}
       <StatsKpiCards kpis={kpis} isLoading={isLoading} />
 
-      {/* 3. Grille de Visualisations Graphiques (Recharts v3) */}
-      <StatsChartsGrid
-        rawHistory={rawHistory}
-        alertsList={alertsList}
-        topSensors={topSensors}
-        alertsByType={alertsByType}
-      />
+      {/* 3. Section des Statistiques par Grandeurs Physiques (Moyenne, Min, Max) */}
+      <StatsPhysicalMetricsCards metrics={physicalMetrics} isLoading={isLoading} />
 
-      {/* 4. Grille d Exploration des Donnees avec Export CSV/JSON */}
+      {/* 4. Section Santé Matérielle : Top 5 Capteurs à Batterie Critique */}
+      <StatsBatteryHealthTable batteryData={batteryCritical} isLoading={isLoading} />
+
+      {/* 5. Section Cartographie des Incidents par Emplacement / Serre */}
+      <StatsLocationIncidentsChart locationData={locationIncidents} isLoading={isLoading} />
+
+      {/* 6. Grille d Exploration des Donnees avec Export CSV/JSON */}
       <StatsDataTable alertsList={alertsList} rawList={rawHistory} />
     </div>
   );

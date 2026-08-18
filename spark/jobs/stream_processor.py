@@ -1,54 +1,40 @@
+import os
 from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType, StructField, StringType, DoubleType, TimestampType
 from pyspark.sql.functions import from_json, to_json, struct, col, when
 import time
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SINGLE SOURCE OF TRUTH : Seuils d'Anomalie par Type de Capteur
+# SINGLE SOURCE OF TRUTH : Seuils d'Anomalie Centralisés dans MongoDB
 # ══════════════════════════════════════════════════════════════════════════════
-# Ces seuils sont définis ici UNE SEULE FOIS. Si on veut ajuster un seuil
-# (ex: rendre l'alerte température plus stricte), on change uniquement ici.
-# Le reste du code s'adapte automatiquement.
-#
-# Contexte : Plateforme industrielle AzurA, Agadir, Maroc
-#   - Températures ambiantes élevées (25-40°C en été à Agadir)
-#   - Machines industrielles (fabriques, entrepôts, zone portuaire)
-#   - Seuils reflètent les normes industrielles IEC/ISO pour ce type de site
-# ══════════════════════════════════════════════════════════════════════════════
-SENSOR_THRESHOLDS = {
-    # Température (°C) - Capteurs sur machines industrielles
-    # Normal : 20-80°C (chauffage machine accepté en zone industrielle chaude)
-    # TROP FROID < 5°C  : risque de gel des équipements la nuit en hiver à Agadir
-    # TROP CHAUD > 80°C : surchauffe machine, risque d'incendie
-    "temperature": {"min": 5.0,   "max": 80.0},
-
-    # Vibration (mm/s) - Capteurs sur moteurs et turbines
-    # Normal : 0-5 mm/s (norme ISO 10816 pour machines industrielles)
-    # TROP BAS < 0 mm/s  : physiquement impossible (valeur absolue)
-    # TROP HAUT > 5 mm/s : déséquilibre rotor, risque de casse
-    "vibration":   {"min": 0.0,   "max": 5.0},
-
-    # Pression (bar) - Capteurs sur conduites et cuves
-    # Normal : 1-10 bar
-    # TROP BAS < 1 bar   : fuite de pression, risque de cavitation dans les pompes
-    # TROP HAUT > 10 bar : surpression, risque d'explosion de conduite
-    "pression":    {"min": 1.0,   "max": 10.0},
-
-    # Humidité (%) - Capteurs dans entrepôts et zones de stockage
-    # Normal : 30-70%
-    # TROP SEC < 30%     : risque d'électricité statique (dangereux pour les composants)
-    # TROP HUMIDE > 70%  : risque de moisissures, corrosion des équipements
-    "humidite":    {"min": 30.0,  "max": 70.0},
-
-    # Consommation électrique (kW) - Capteurs sur transformateurs
-    # Normal : 100-500 kW
-    # TROP BAS < 100 kW  : équipement probablement hors service (panne silencieuse)
-    # TROP HAUT > 500 kW : surcharge électrique, risque de disjonction générale
-    "consommation": {"min": 100.0, "max": 500.0},
-
-    # Batterie (%) - Commune à tous les capteurs
-    "battery":     {"min": 15.0,  "max": 100.0},
+SENSOR_THRESHOLDS_DEFAULT = {
+    "temperature":   {"min": 5.0,   "max": 80.0},
+    "vibration":     {"min": 0.0,   "max": 5.0},
+    "pression":      {"min": 1.0,   "max": 10.0},
+    "humidite":      {"min": 30.0,  "max": 70.0},
+    "consommation":  {"min": 100.0, "max": 500.0},
+    "battery":       {"min": 20.0,  "max": 100.0}
 }
+
+def load_thresholds_from_mongodb() -> dict:
+    """Charge les seuils depuis la collection system_configuration de MongoDB (Single Source of Truth)."""
+    try:
+        from pymongo import MongoClient
+        mongo_uri = os.environ.get("MONGO_URI", "mongodb://mongos-router:27017")
+        client = MongoClient(mongo_uri, serverSelectionTimeoutMS=4000)
+        doc = client["azura_iot"]["system_configuration"].find_one({"_id": "thresholds_config"})
+        if doc and "thresholds" in doc:
+            t = doc["thresholds"]
+            print("[Spark] ✅ Seuils charges dynamiquement depuis MongoDB 'system_configuration' !")
+            return {
+                k: {"min": float(v["min"]), "max": float(v["max"])}
+                for k, v in t.items()
+            }
+    except Exception as e:
+        print(f"[Spark] ⚠️ Impossible de lire les seuils depuis MongoDB ({e}), utilisation des valeurs par defaut.")
+    return SENSOR_THRESHOLDS_DEFAULT
+
+SENSOR_THRESHOLDS = load_thresholds_from_mongodb()
 
 def create_spark_session():
     """

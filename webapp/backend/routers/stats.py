@@ -118,3 +118,43 @@ def get_filtered_raw(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur MongoDB: {str(e)}")
 
+@router.get("/physical-metrics")
+def get_physical_metrics(
+    start_date: str = Query(default=None),
+    end_date: str = Query(default=None),
+    device_id: str = Query(default="ALL")
+):
+    """Retourne les moyennes, min, max et alertes par type physique depuis MongoDB."""
+    try:
+        return mongo_service.get_physical_metrics_stats(start_date=start_date, end_date=end_date, device_id=device_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur MongoDB: {str(e)}")
+
+@router.get("/alerts-by-location")
+def get_alerts_by_location(
+    start_date: str = Query(default=None),
+    end_date: str = Query(default=None),
+    device_id: str = Query(default="ALL")
+):
+    """Retourne la cartographie des incidents par emplacement géographique / serre depuis MongoDB."""
+    try:
+        return mongo_service.get_alerts_by_location(start_date=start_date, end_date=end_date, device_id=device_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur MongoDB: {str(e)}")
+
+@router.get("/critical-battery")
+def get_critical_battery(
+    start_date: str = Query(default=None),
+    end_date: str = Query(default=None),
+    device_id: str = Query(default="ALL"),
+    limit: int = Query(default=5, ge=1, le=15)
+):
+    """Retourne les 5 capteurs les plus critiques en termes de niveau de batterie restant."""
+    try:
+        return mongo_service.get_critical_battery_sensors(start_date=start_date, end_date=end_date, device_id=device_id, limit=limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur MongoDB: {str(e)}")
+
+
+
+

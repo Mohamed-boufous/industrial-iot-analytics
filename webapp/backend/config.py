@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     MONGO_DB_NAME: str = "azura_iot"
     COLLECTION_RAW: str = "raw_measurements"
     COLLECTION_ALERTS: str = "alerts_history"
+    COLLECTION_CONFIG: str = "system_configuration"
     
     # --- NOTIFICATION EMAIL CONFIGURATION ---
     SMTP_SERVER: str = os.getenv("SMTP_SERVER", "smtp.gmail.com")

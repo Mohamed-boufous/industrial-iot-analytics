@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from config import settings
 from services.kafka_consumer import kafka_service
 from routes_ws import alerts_ws, sensors_ws
-from routers import stats
+from routers import stats, settings as settings_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -39,6 +39,7 @@ app.add_middleware(
 app.include_router(alerts_ws.router)
 app.include_router(sensors_ws.router)
 app.include_router(stats.router)
+app.include_router(settings_router.router)
 
 @app.get("/")
 def root():

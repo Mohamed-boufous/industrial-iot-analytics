@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from pymongo import MongoClient, DESCENDING
 from config import settings
 
@@ -199,4 +200,379 @@ class MongoService:
         res.reverse()
         return res
 
+    def get_physical_metrics_stats(self, start_date: str = None, end_date: str = None, device_id: str = None) -> list[dict]:
+        """
+        Agrégation MongoDB pour calculer les métriques réelles (Moyenne, Min, Max, Nombre de mesures, Alertes)
+        pour chacun des 5 types de grandeurs physiques (Température, Humidité, Vibration, Pression, Puissance).
+        """
+        db = self._get_db()
+        query_raw = {}
+        query_alerts = {}
+
+        if device_id and device_id != "ALL":
+            query_raw["device_id"] = device_id
+            query_alerts["device_id"] = device_id
+
+        if start_date or end_date:
+            time_query = {}
+            if start_date:
+                time_query["$gte"] = start_date
+            if end_date:
+                time_query["$lte"] = end_date
+            query_raw["timestamp"] = time_query
+            query_alerts["timestamp"] = time_query
+
+        # 1. Agrégation sur raw_measurements pour Moyenne, Min, Max
+        pipeline_raw = [
+            {"$match": query_raw},
+            {
+                "$group": {
+                    "_id": "$device_type",
+                    "avg_value": {"$avg": "$value"},
+                    "min_value": {"$min": "$value"},
+                    "max_value": {"$max": "$value"},
+                    "count": {"$sum": 1},
+                    "unit": {"$first": "$unit"}
+                }
+            }
+        ]
+
+        raw_stats = list(db[settings.COLLECTION_RAW].aggregate(pipeline_raw))
+        raw_dict = {item["_id"]: item for item in raw_stats if item["_id"]}
+
+        # 2. Agrégation sur alerts_history pour le nombre d'alertes par grandeur
+        pipeline_alerts = [
+            {"$match": query_alerts},
+            {
+                "$group": {
+                    "_id": "$device_type",
+                    "alerts_count": {"$sum": 1}
+                }
+            }
+        ]
+        alerts_stats = list(db[settings.COLLECTION_ALERTS].aggregate(pipeline_alerts))
+        alerts_dict = {item["_id"]: item.get("alerts_count", 0) for item in alerts_stats if item["_id"]}
+
+        # Configuration des métriques physiques supportées
+        TYPE_METADATA = {
+            "temperature": {"label": "Temperature", "unit": "°C", "icon": "Thermometer", "color": "#ef4444", "bg": "rgba(239, 68, 68, 0.08)"},
+            "humidite": {"label": "Humidite", "unit": "%", "icon": "Drop", "color": "#06b6d4", "bg": "rgba(6, 182, 212, 0.08)"},
+            "vibration": {"label": "Vibration Mecanique", "unit": "mm/s", "icon": "Activity", "color": "#8b5cf6", "bg": "rgba(139, 92, 246, 0.08)"},
+            "pression": {"label": "Pression Hydraulique", "unit": "bar", "icon": "Gauge", "color": "#3b82f6", "bg": "rgba(59, 130, 246, 0.08)"},
+            "consommation": {"label": "Puissance Electrique", "unit": "kW", "icon": "Lightning", "color": "#f59e0b", "bg": "rgba(245, 158, 11, 0.08)"}
+        }
+
+        results = []
+        for type_key, meta in TYPE_METADATA.items():
+            raw_info = raw_dict.get(type_key, {})
+            avg_v = raw_info.get("avg_value")
+            min_v = raw_info.get("min_value")
+            max_v = raw_info.get("max_value")
+            cnt = raw_info.get("count", 0)
+            alt_cnt = alerts_dict.get(type_key, 0)
+
+            results.append({
+                "type": type_key,
+                "label": meta["label"],
+                "unit": meta["unit"],
+                "icon": meta["icon"],
+                "color": meta["color"],
+                "bg": meta["bg"],
+                "avg": round(float(avg_v), 2) if avg_v is not None else 0.0,
+                "min": round(float(min_v), 2) if min_v is not None else 0.0,
+                "max": round(float(max_v), 2) if max_v is not None else 0.0,
+                "total_measurements": cnt,
+                "total_alerts": alt_cnt
+            })
+
+        return results
+
+    def get_alerts_by_location(self, start_date: str = None, end_date: str = None, device_id: str = None) -> list[dict]:
+        """
+        Agrégation MongoDB pour la cartographie des incidents par emplacement géographique / serre (location).
+        """
+        db = self._get_db()
+        query_alerts = {}
+
+        if device_id and device_id != "ALL":
+            query_alerts["device_id"] = device_id
+
+        if start_date or end_date:
+            time_query = {}
+            if start_date:
+                time_query["$gte"] = start_date
+            if end_date:
+                time_query["$lte"] = end_date
+            query_alerts["timestamp"] = time_query
+
+        total_alerts = db[settings.COLLECTION_ALERTS].count_documents(query_alerts)
+
+        LOCATION_LABELS = {
+            "tangier_med_hub": "Hub Logistique Tanger Med",
+            "agadir_entrepot_central": "Entrepot Central (Agadir)",
+            "transformateur_general": "Transformateur General",
+            "station_solaire_dakhla": "Station Solaire Dakhla",
+            "agadir_serre_1": "Serre Maraichere 1 (Agadir)",
+            "stockage_legumes_ch1": "Chambre Stockage Legumes 1",
+            "zone_pompage_nord": "Station Pompage Nord",
+            "conditionnement_chambre_2": "Chambre Conditionnement 2"
+        }
+
+        pipeline = [
+            {"$match": query_alerts},
+            {
+                "$group": {
+                    "_id": "$location",
+                    "count": {"$sum": 1}
+                }
+            },
+            {"$sort": {"count": DESCENDING}}
+        ]
+
+        raw_locs = list(db[settings.COLLECTION_ALERTS].aggregate(pipeline))
+        results = []
+
+        for item in raw_locs:
+            loc_id = item.get("_id") or "Inconnu"
+            cnt = item.get("count", 0)
+            pct = round((cnt / total_alerts * 100), 1) if total_alerts > 0 else 0.0
+            results.append({
+                "location_id": loc_id,
+                "label": LOCATION_LABELS.get(loc_id, loc_id),
+                "count": cnt,
+                "percentage": pct
+            })
+
+        # Si certains emplacements n'ont aucune alerte, les inclure avec 0
+        existing_ids = {r["location_id"] for r in results}
+        for loc_id, loc_name in LOCATION_LABELS.items():
+            if loc_id not in existing_ids:
+                results.append({
+                    "location_id": loc_id,
+                    "label": loc_name,
+                    "count": 0,
+                    "percentage": 0.0
+                })
+
+        # Trier par nombre d'alertes décroissant
+        results.sort(key=lambda x: x["count"], reverse=True)
+        return results
+
+    def get_critical_battery_sensors(self, start_date: str = None, end_date: str = None, device_id: str = None, limit: int = 5) -> list[dict]:
+        """
+        Agrégation MongoDB pour identifier les 5 capteurs les plus critiques en termes de niveau de batterie restant.
+        """
+        db = self._get_db()
+        query_raw = {}
+
+        if device_id and device_id != "ALL":
+            query_raw["device_id"] = device_id
+
+        if start_date or end_date:
+            time_query = {}
+            if start_date:
+                time_query["$gte"] = start_date
+            if end_date:
+                time_query["$lte"] = end_date
+            query_raw["timestamp"] = time_query
+
+        LOCATION_LABELS = {
+            "tangier_med_hub": "Hub Logistique Tanger Med",
+            "agadir_entrepot_central": "Entrepot Central (Agadir)",
+            "transformateur_general": "Transformateur General",
+            "station_solaire_dakhla": "Station Solaire Dakhla",
+            "agadir_serre_1": "Serre Maraichere 1 (Agadir)",
+            "stockage_legumes_ch1": "Chambre Stockage Legumes 1",
+            "zone_pompage_nord": "Station Pompage Nord",
+            "conditionnement_chambre_2": "Chambre Conditionnement 2"
+        }
+
+        TYPE_LABELS = {
+            "temperature": "Temperature",
+            "humidite": "Humidite",
+            "vibration": "Vibration Mecanique",
+            "pression": "Pression Hydraulique",
+            "consommation": "Puissance Electrique"
+        }
+
+        pipeline = [
+            {"$match": query_raw},
+            {"$sort": {"timestamp": DESCENDING}},
+            {
+                "$group": {
+                    "_id": "$device_id",
+                    "latest_battery": {"$first": "$battery_level"},
+                    "device_type": {"$first": "$device_type"},
+                    "location": {"$first": "$location"},
+                    "last_seen": {"$first": "$timestamp"},
+                    "signal_strength": {"$first": "$signal_strength"}
+                }
+            },
+            {"$sort": {"latest_battery": 1}},  # Plus faible batterie en premier
+            {"$limit": limit}
+        ]
+
+        raw_items = list(db[settings.COLLECTION_RAW].aggregate(pipeline))
+        results = []
+
+        for item in raw_items:
+            b_val = item.get("latest_battery")
+            battery_pct = round(float(b_val), 1) if b_val is not None else 100.0
+            
+            # Classification d'état
+            if battery_pct < 20.0:
+                health_status = "CRITIQUE"
+                health_color = "#dc2626"
+            elif battery_pct < 50.0:
+                health_status = "ATTENTION"
+                health_color = "#f59e0b"
+            else:
+                health_status = "BON"
+                health_color = "#2563eb"
+
+            loc_raw = item.get("location", "")
+            type_raw = item.get("device_type", "")
+
+            results.append({
+                "device_id": item.get("_id"),
+                "device_type": TYPE_LABELS.get(type_raw, type_raw),
+                "location": LOCATION_LABELS.get(loc_raw, loc_raw),
+                "battery_level": battery_pct,
+                "signal_strength": item.get("signal_strength", -50),
+                "last_seen": item.get("last_seen", ""),
+                "status": health_status,
+                "status_color": health_color
+            })
+
+        return results
+
+    def get_system_thresholds(self) -> dict:
+        """
+        Récupère les seuils de surveillance système depuis la collection MongoDB 'system_configuration'.
+        Si la configuration n'existe pas encore, elle est automatiquement initialisée avec les valeurs par défaut.
+        """
+        db = self._get_db()
+        config_doc = db[settings.COLLECTION_CONFIG].find_one({"_id": "thresholds_config"})
+
+        if not config_doc:
+            default_config = {
+                "_id": "thresholds_config",
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "thresholds": DEFAULT_THRESHOLDS
+            }
+            db[settings.COLLECTION_CONFIG].insert_one(default_config)
+            return DEFAULT_THRESHOLDS
+
+        return config_doc.get("thresholds", DEFAULT_THRESHOLDS)
+
+    def update_system_thresholds(self, updated_thresholds: dict) -> dict:
+        """
+        Met à jour les seuils de surveillance dans MongoDB.
+        """
+        db = self._get_db()
+        current_thresholds = self.get_system_thresholds()
+
+        for key, vals in updated_thresholds.items():
+            if key in current_thresholds:
+                if "min" in vals:
+                    current_thresholds[key]["min"] = float(vals["min"])
+                if "max" in vals:
+                    current_thresholds[key]["max"] = float(vals["max"])
+
+        update_doc = {
+            "$set": {
+                "thresholds": current_thresholds,
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }
+        }
+        db[settings.COLLECTION_CONFIG].update_one({"_id": "thresholds_config"}, update_doc, upsert=True)
+        return current_thresholds
+
+    def reset_system_thresholds(self) -> dict:
+        """
+        Réinitialise tous les seuils aux valeurs d'usine par défaut.
+        """
+        db = self._get_db()
+        update_doc = {
+            "$set": {
+                "thresholds": DEFAULT_THRESHOLDS,
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }
+        }
+        db[settings.COLLECTION_CONFIG].update_one({"_id": "thresholds_config"}, update_doc, upsert=True)
+        return DEFAULT_THRESHOLDS
+
+
+DEFAULT_THRESHOLDS = {
+    "temperature": {
+        "key": "temperature",
+        "label": "Temperature",
+        "unit": "°C",
+        "min": 5.0,
+        "max": 80.0,
+        "step": 0.5,
+        "standard_reference": "Norme IEC 60034-1 (Machines)",
+        "danger_low_description": "Risque de gel / froid critique (< 5°C)",
+        "danger_high_description": "Surchauffe machine / risque incendie (> 80°C)"
+    },
+    "vibration": {
+        "key": "vibration",
+        "label": "Vibration Mecanique",
+        "unit": "mm/s",
+        "min": 0.0,
+        "max": 5.0,
+        "step": 0.1,
+        "standard_reference": "Norme ISO 10816-3 (Rotors & Pompes)",
+        "danger_low_description": "Fonctionnement nominal stable (0 mm/s)",
+        "danger_high_description": "Desequilibre rotor / risque de casse (> 5.0 mm/s)"
+    },
+    "pression": {
+        "key": "pression",
+        "label": "Pression Hydraulique",
+        "unit": "bar",
+        "min": 1.0,
+        "max": 10.0,
+        "step": 0.1,
+        "standard_reference": "Norme Hydraulique ISO 4413",
+        "danger_low_description": "Fuite de fluide / cavitation pompes (< 1.0 bar)",
+        "danger_high_description": "Surpression / risque explosion conduite (> 10.0 bar)"
+    },
+    "humidite": {
+        "key": "humidite",
+        "label": "Humidite",
+        "unit": "%",
+        "min": 30.0,
+        "max": 70.0,
+        "step": 1.0,
+        "standard_reference": "Stockage Agricole & Maraicher",
+        "danger_low_description": "Secheresse extreme / electricite statique (< 30%)",
+        "danger_high_description": "Humidite excessive / moisissures & corrosion (> 70%)"
+    },
+    "consommation": {
+        "key": "consommation",
+        "label": "Puissance Electrique",
+        "unit": "kW",
+        "min": 100.0,
+        "max": 500.0,
+        "step": 5.0,
+        "standard_reference": "Transformateurs & Reseau MT",
+        "danger_low_description": "Arret anormal d equipement (< 100 kW)",
+        "danger_high_description": "Surcharge reseau electrique (> 500 kW)"
+    },
+    "battery": {
+        "key": "battery",
+        "label": "Batterie Capteur",
+        "unit": "%",
+        "min": 20.0,
+        "max": 100.0,
+        "step": 1.0,
+        "standard_reference": "IoT Power Safety Standard",
+        "danger_low_description": "Batterie critique (< 20%) - Remplacement urgent",
+        "danger_high_description": "Charge maximale nominale (100%)"
+    }
+}
+
+
 mongo_service = MongoService()
+
+
