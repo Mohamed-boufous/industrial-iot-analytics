@@ -68,15 +68,17 @@ function resolveMetricInfo(deviceType, deviceId, status) {
   };
 }
 
-export function AlertsKafkaTable({ alerts = [] }) {
+export function AlertsKafkaTable({ alerts = [], thresholdsConfig = null, onRefresh, isRefreshing: propIsRefreshing }) {
   // Mode Streaming en direct active par defaut
   const [isStreaming, setIsStreaming] = useState(true);
   // Donnees affichees dans le tableau (figees si streaming desactive jusqu'au clic sur Actualiser)
   const [displayedAlerts, setDisplayedAlerts] = useState([]);
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isRefreshingLocal, setIsRefreshingLocal] = useState(false);
   const [lastUpdatedTime, setLastUpdatedTime] = useState(Date.now());
   // Message interactif temporaire "Click me" affiche pendant 20s au demarrage
   const [showClickMeHint, setShowClickMeHint] = useState(true);
+
+  const isRefreshing = propIsRefreshing !== undefined ? propIsRefreshing : isRefreshingLocal;
 
   // Minuteur automatique de 20s pour masquer l'indice "Click me"
   useEffect(() => {
@@ -104,7 +106,11 @@ export function AlertsKafkaTable({ alerts = [] }) {
 
   // Fonction d'actualisation manuelle a la demande
   const handleManualRefresh = () => {
-    setIsRefreshing(true);
+    if (onRefresh) {
+      onRefresh();
+      return;
+    }
+    setIsRefreshingLocal(true);
     fetch("/api/stats/recent-alerts")
       .then((res) => res.json())
       .then((data) => {
@@ -118,7 +124,7 @@ export function AlertsKafkaTable({ alerts = [] }) {
         setLastUpdatedTime(Date.now());
       })
       .finally(() => {
-        setTimeout(() => setIsRefreshing(false), 500);
+        setTimeout(() => setIsRefreshingLocal(false), 500);
       });
   };
 
@@ -133,12 +139,17 @@ export function AlertsKafkaTable({ alerts = [] }) {
     }
   };
 
-  // Formatage et classification rigoureuse HIGH (Rouge) vs LOW (Bleu)
+  // Formatage et classification rigoureuse HIGH (Rouge) vs LOW (Bleu) avec seuils dynamiques
   const rows = useMemo(() => {
     return displayedAlerts.map((al, idx) => {
       const metricInfo = resolveMetricInfo(al.device_type || al.metric, al.device_id, al.status);
       const val = typeof al.value === "number" ? al.value : typeof al.current_value === "number" ? al.current_value : 0;
       
+      const dyn = thresholdsConfig && (thresholdsConfig[al.device_type] || thresholdsConfig[al.metric]);
+      const effMin = dyn ? Number(dyn.min) : metricInfo.min;
+      const effMax = dyn ? Number(dyn.max) : metricInfo.max;
+      const span = (effMax - effMin) || 1;
+
       // Classification exacte du sens : HIGH (Depassement Haut -> Rouge) vs LOW (Chute Basse -> Bleu)
       let isHigh = true;
       const statusStr = String(al.status || "").toUpperCase();
@@ -150,7 +161,7 @@ export function AlertsKafkaTable({ alerts = [] }) {
         isHigh = true;
       } else {
         // Verification par rapport aux bornes minimales et maximales
-        if (val < metricInfo.min) {
+        if (val < effMin) {
           isHigh = false;
         } else {
           isHigh = true;
@@ -160,6 +171,21 @@ export function AlertsKafkaTable({ alerts = [] }) {
       // Couleur stricte : ROUGE pour HIGH, BLEU pour LOW
       const directionColor = isHigh ? "#ef4444" : "#0284c7"; // Rouge vif vs Bleu electrique cyan
       const statusLabel = isHigh ? "Haut" : "Bas";
+      const targetThreshold = al.threshold || (isHigh ? effMax : effMin);
+
+      // Calcul dynamique précis de la sévérité en % d'écart
+      let sevText = "CRITIQUE";
+      if (al.deviation_pct !== undefined) {
+        sevText = `+${al.deviation_pct.toFixed(1)}%`;
+      } else if (isHigh && val > effMax) {
+        const pct = ((val - effMax) / span) * 100;
+        sevText = `+${pct.toFixed(1)}%`;
+      } else if (!isHigh && val < effMin) {
+        const pct = ((effMin - val) / span) * 100;
+        sevText = `+${pct.toFixed(1)}%`;
+      } else if (al.severity) {
+        sevText = typeof al.severity === "number" ? `+${al.severity.toFixed(1)}%` : String(al.severity);
+      }
 
       return {
         id: al._id || al.alert_id || `al-${idx}-${al.device_id}-${al.timestamp}`,
@@ -169,16 +195,16 @@ export function AlertsKafkaTable({ alerts = [] }) {
         metricColor: metricInfo.color,
         location: al.location || "Site AzurA",
         value: val,
-        threshold: al.threshold || (isHigh ? metricInfo.max : metricInfo.min),
+        threshold: targetThreshold,
         unit: al.unit || metricInfo.unit,
-        severity: al.severity || (al.deviation_pct !== undefined ? `+${al.deviation_pct.toFixed(1)}%` : "CRITIQUE"),
+        severity: sevText,
         statusLabel: statusLabel,
         isHigh: isHigh,
         directionColor: directionColor,
         timeStr: al.timestamp ? new Date(al.timestamp).toLocaleTimeString('fr-FR', { hour12: false }) : "N/A"
       };
     });
-  }, [displayedAlerts]);
+  }, [displayedAlerts, thresholdsConfig]);
 
   return (
     <div style={{

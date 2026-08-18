@@ -42,29 +42,32 @@ const SENSOR_ID_COLORS = [
 ];
 
 /**
- * Calcule l'indice de gravite (Severity & Deviation Index) en % de depassement au-dela du seuil critique
+ * Calcule l'indice de gravite (Severity & Deviation Index) en % de depassement au-dela du seuil critique dynamique
  */
-function calculateSeverityIndex(value, deviceType) {
-  const t = SENSOR_THRESHOLDS[deviceType] || { min: 0, max: 100 };
-  const span = t.max - t.min || 1;
+function calculateSeverityIndex(value, deviceType, dynamicThresholds = null) {
+  const currentThresholds = dynamicThresholds || SENSOR_THRESHOLDS;
+  const t = currentThresholds[deviceType] || { min: 0, max: 100 };
+  const minVal = Number(t.min);
+  const maxVal = Number(t.max);
+  const span = (maxVal - minVal) || 1;
 
-  if (value > t.max) {
-    const deviation = ((value - t.max) / span) * 100;
+  if (value > maxVal) {
+    const deviation = ((value - maxVal) / span) * 100;
     return {
       severity: Math.max(1, deviation),
       direction: "HIGH",
       directionColor: "#ef4444", // Rouge pour Depassement Haut
       badge: "HAUT",
-      thresholdVal: t.max
+      thresholdVal: maxVal
     };
-  } else if (value < t.min) {
-    const deviation = ((t.min - value) / span) * 100;
+  } else if (value < minVal) {
+    const deviation = ((minVal - value) / span) * 100;
     return {
       severity: Math.max(1, deviation),
       direction: "LOW",
       directionColor: "#06b6d4", // Cyan pour Chute Basse
       badge: "BAS",
-      thresholdVal: t.min
+      thresholdVal: minVal
     };
   }
 
@@ -73,7 +76,7 @@ function calculateSeverityIndex(value, deviceType) {
     direction: "NORMAL",
     directionColor: "#22c55e",
     badge: "NOMINAL",
-    thresholdVal: t.max
+    thresholdVal: maxVal
   };
 }
 
@@ -83,6 +86,7 @@ export function RealTimeAnalytics() {
   const [sensorSeries, setSensorSeries] = useState({});
   const [rawAlerts, setRawAlerts] = useState([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [dynamicThresholds, setDynamicThresholds] = useState(null);
   // Horodatage reel courant pour l'axe X glissant (mise a jour chaque 1s)
   const [currentTime, setCurrentTime] = useState(Date.now());
   const [hoveredData, setHoveredData] = useState(null);
@@ -92,6 +96,23 @@ export function RealTimeAnalytics() {
   const height = 330;
   const padding = { top: 35, right: 40, bottom: 50, left: 105 };
 
+  // Chargement / Rafraîchissement périodique des seuils depuis MongoDB (Single Source of Truth)
+  useEffect(() => {
+    const fetchThresholds = () => {
+      fetch("/api/settings/thresholds")
+        .then((res) => res.json())
+        .then((data) => {
+          if (data && data.thresholds) {
+            setDynamicThresholds(data.thresholds);
+          }
+        })
+        .catch(() => {});
+    };
+    fetchThresholds();
+    const interval = setInterval(fetchThresholds, 2500);
+    return () => clearInterval(interval);
+  }, []);
+
   // Horloge temps reel continue : fait avancer l'axe X chaque seconde
   useEffect(() => {
     const timer = setInterval(() => {
@@ -99,6 +120,34 @@ export function RealTimeAnalytics() {
     }, 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // Recalcul immediat des series et cartes d alertes lors d un changement de seuil
+  useEffect(() => {
+    if (!dynamicThresholds) return;
+    setSensorSeries(prev => {
+      const next = {};
+      Object.entries(prev).forEach(([sId, series]) => {
+        const remappedPoints = (series.points || []).map(p => {
+          const sevInfo = calculateSeverityIndex(p.value, p.deviceType, dynamicThresholds);
+          return {
+            ...p,
+            severity: sevInfo.severity,
+            direction: sevInfo.direction,
+            directionColor: sevInfo.directionColor,
+            thresholdVal: sevInfo.thresholdVal
+          };
+        });
+        const lastPt = remappedPoints[remappedPoints.length - 1];
+        next[sId] = {
+          ...series,
+          points: remappedPoints,
+          direction: lastPt ? lastPt.direction : series.direction,
+          directionColor: lastPt ? lastPt.directionColor : series.directionColor
+        };
+      });
+      return next;
+    });
+  }, [dynamicThresholds]);
 
   // Fonction d'ajout et de synchronisation des alertes
   const processAlertsBatch = (alerts) => {
@@ -129,11 +178,12 @@ export function RealTimeAnalytics() {
         const val = typeof alert.value === "number" ? alert.value : 0;
         const devType = alert.device_type || "temperature";
         const status = alert.status || "ANOMALY";
-        const unit = alert.unit || (SENSOR_THRESHOLDS[devType] ? SENSOR_THRESHOLDS[devType].unit : "");
+        const dynCfg = dynamicThresholds && dynamicThresholds[devType];
+        const unit = alert.unit || (dynCfg ? dynCfg.unit : (SENSOR_THRESHOLDS[devType] ? SENSOR_THRESHOLDS[devType].unit : ""));
         const location = alert.location || "Site AzurA";
 
-        // Calcul de la gravite
-        const sevInfo = calculateSeverityIndex(val, devType);
+        // Calcul de la gravite par rapport aux seuils dynamiques
+        const sevInfo = calculateSeverityIndex(val, devType, dynamicThresholds);
         const diagnostic = SENSOR_DIAGNOSTICS[status] || "Derive Operationnelle";
 
         // Conversion horodatage
@@ -942,6 +992,7 @@ export function RealTimeAnalytics() {
       {/* Tableau Deroulant & Selectionnable des 10 Dernieres Alertes Kafka (Shadcn + TanStack) */}
       <AlertsKafkaTable
         alerts={rawAlerts}
+        thresholdsConfig={dynamicThresholds}
         onRefresh={() => syncLatestAlerts(true)}
         isRefreshing={isRefreshing}
       />
