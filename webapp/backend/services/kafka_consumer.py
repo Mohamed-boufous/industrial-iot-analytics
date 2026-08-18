@@ -53,7 +53,7 @@ class KafkaConsumerService:
                     consumer = self._create_consumer()
                     consumer.subscribe([settings.KAFKA_TOPIC_PROCESSED, settings.KAFKA_TOPIC_ALERTS])
 
-                msg = consumer.poll(timeout=1.0)
+                msg = consumer.poll(timeout=0.1)
                 if msg is None:
                     continue
                 if msg.error():

@@ -106,11 +106,10 @@ export function AlertsKafkaTable({ alerts = [], thresholdsConfig = null, onRefre
 
   // Fonction d'actualisation manuelle a la demande
   const handleManualRefresh = () => {
+    setIsRefreshingLocal(true);
     if (onRefresh) {
       onRefresh();
-      return;
     }
-    setIsRefreshingLocal(true);
     fetch("/api/stats/recent-alerts")
       .then((res) => res.json())
       .then((data) => {
@@ -120,8 +119,10 @@ export function AlertsKafkaTable({ alerts = [], thresholdsConfig = null, onRefre
         }
       })
       .catch(() => {
-        setDisplayedAlerts(alerts.slice(0, 10));
-        setLastUpdatedTime(Date.now());
+        if (Array.isArray(alerts) && alerts.length > 0) {
+          setDisplayedAlerts(alerts.slice(0, 10));
+          setLastUpdatedTime(Date.now());
+        }
       })
       .finally(() => {
         setTimeout(() => setIsRefreshingLocal(false), 500);

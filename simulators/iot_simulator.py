@@ -228,6 +228,8 @@ class IoTSimulator:
                         self.produce_to_kafka(reading_obj)
                         last_sent_time[sensor_id] = current_now
                         
+                if self.producer:
+                    self.producer.flush(0.05)
                 sys.stdout.flush()
                 time.sleep(0.05)
         except KeyboardInterrupt:

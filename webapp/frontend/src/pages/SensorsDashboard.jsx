@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import StrokeText from '../components/ui/StrokeText';
 import { SensorTypeChart } from '../components/ui/SensorTypeChart';
 import { SensorsKafkaTable } from '../components/ui/SensorsKafkaTable';
@@ -57,7 +57,6 @@ const SENSOR_TYPE_CONFIGS = {
 };
 
 export default function SensorsDashboard() {
-  const { lastMessage, isConnected } = useWebSocket('/ws/sensors');
   const [sensorSeries, setSensorSeries] = useState({});
   const [currentTime, setCurrentTime] = useState(Date.now());
   const [lastUpdatedTime, setLastUpdatedTime] = useState(Date.now());
@@ -200,21 +199,20 @@ export default function SensorsDashboard() {
       .catch(() => {});
   }, []);
 
-  // Ingestion des messages entrants depuis le WebSocket Kafka (iot-processed)
-  useEffect(() => {
-    if (!lastMessage) return;
-
+  // Ingestion synchrone immédiate des messages entrants depuis le WebSocket Kafka (iot-processed)
+  const handleSensorMessage = useCallback((msg) => {
+    if (!msg) return;
     const now = Date.now();
     setLastUpdatedTime(now);
 
     // 1. Initialisation depuis l'état mémoire backend avec historique
-    if (lastMessage.type === "INITIAL_SENSORS_STATE") {
-      ingestSensorsData(lastMessage.data, lastMessage.history);
+    if (msg.type === "INITIAL_SENSORS_STATE") {
+      ingestSensorsData(msg.data, msg.history);
     }
 
-    // 2. Mise à jour unitaire en flux continu temps réel
-    if (lastMessage.type === "SENSOR_UPDATE" && lastMessage.data) {
-      const item = lastMessage.data;
+    // 2. Mise à jour unitaire en flux continu temps réel (15/15 capteurs traités sans délai)
+    if (msg.type === "SENSOR_UPDATE" && msg.data) {
+      const item = msg.data;
       const sId = item.device_id;
       if (!sId) return;
 
@@ -258,7 +256,9 @@ export default function SensorsDashboard() {
         };
       });
     }
-  }, [lastMessage]);
+  }, []);
+
+  const { isConnected } = useWebSocket('/ws/sensors', handleSensorMessage);
 
   // Regroupement des capteurs par type de grandeur avec garantie de points continus
   const groupedSensors = useMemo(() => {

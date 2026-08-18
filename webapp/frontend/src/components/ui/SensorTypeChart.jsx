@@ -103,7 +103,18 @@ export function SensorTypeChart({
   const processedSeries = useMemo(() => {
     return sensorsData.map((sensor, sIdx) => {
       const palette = SENSOR_LINE_COLORS[sIdx % SENSOR_LINE_COLORS.length];
-      const validPoints = (sensor.points || [])
+      const allSensorPoints = sensor.points || [];
+      
+      // Récupération de la dernière valeur connue du capteur
+      const lastKnown = allSensorPoints.length > 0 ? allSensorPoints[allSensorPoints.length - 1] : null;
+      const latestValue = lastKnown ? lastKnown.value : null;
+      let latestStatus = "NORMAL";
+      if (latestValue !== null) {
+        if (latestValue > normMax) latestStatus = "HIGH";
+        else if (latestValue < normMin) latestStatus = "LOW";
+      }
+
+      const validPoints = allSensorPoints
         .filter(p => p.time >= minTime - 5000)
         .map(p => {
           let status = "NORMAL";
@@ -121,7 +132,16 @@ export function SensorTypeChart({
         });
 
       if (validPoints.length === 0) {
-        return { sensor, palette, points: [], linePath: "", areaPath: "", lastPt: null, latestValue: null };
+        return {
+          sensor,
+          palette,
+          points: [],
+          linePath: "",
+          areaPath: "",
+          lastPt: null,
+          latestValue,
+          latestStatus
+        };
       }
 
       // Construction de la ligne continue
@@ -145,13 +165,6 @@ export function SensorTypeChart({
       const areaD = `${d} L ${lastX} ${bottomY} L ${firstX} ${bottomY} Z`;
 
       const lastPt = coords[coords.length - 1];
-      const latestValue = validPoints[validPoints.length - 1].value;
-      let latestStatus = "NORMAL";
-      if (latestValue > normMax) {
-        latestStatus = "HIGH";
-      } else if (latestValue < normMin) {
-        latestStatus = "LOW";
-      }
 
       return {
         sensor,

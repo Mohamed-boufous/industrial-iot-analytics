@@ -71,11 +71,11 @@ export default function StatsLocationIncidentsChart({ locationData = [], isLoadi
           letterSpacing: '0.6px',
           margin: 0
         }}>
-          Cartographie des Incidents par Emplacement / Serre
+          Cartographie des Incidents par Ville / Region
         </h2>
       </div>
 
-      {/* 2. Graphique Centré avec Noms en Bas (Axe X) et Mesures en Axe Y */}
+      {/* 2. Graphique Centré avec Noms des Villes en Bas (Axe X) et Incidents en Axe Y */}
       <div style={{
         width: '100%',
         height: '360px',
@@ -86,19 +86,17 @@ export default function StatsLocationIncidentsChart({ locationData = [], isLoadi
         <ResponsiveContainer width="100%" height="100%">
           <BarChart
             data={locationData}
-            margin={{ top: 20, right: 20, left: 10, bottom: 45 }}
+            margin={{ top: 20, right: 20, left: 10, bottom: 20 }}
           >
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0, 0, 0, 0.06)" />
             
-            {/* Axe X en bas : Noms des emplacements */}
+            {/* Axe X en bas : Noms des Villes */}
             <XAxis
               dataKey="label"
-              tick={{ fill: 'var(--azura-text)', fontSize: 11, fontWeight: 700 }}
+              tick={{ fill: 'var(--azura-text)', fontSize: 12, fontWeight: 700 }}
               axisLine={{ stroke: 'var(--azura-border)' }}
               tickLine={false}
               interval={0}
-              angle={-15}
-              textAnchor="end"
             />
 
             {/* Axe Y à gauche : Nombre d'alertes / incidents */}
@@ -111,9 +109,9 @@ export default function StatsLocationIncidentsChart({ locationData = [], isLoadi
             <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(0, 0, 0, 0.03)' }} />
 
             {/* Barres verticales avec têtes arrondies */}
-            <Bar dataKey="count" radius={[8, 8, 0, 0]} maxBarSize={48}>
+            <Bar dataKey="count" radius={[10, 10, 0, 0]} maxBarSize={55}>
               {locationData.map((entry, index) => {
-                // Rouge pour le site le plus critique, Bleu pour les autres, Gris si 0
+                // Rouge pour la ville la plus critique, Bleu pour les autres, Gris si 0
                 const isTopCritical = entry.count > (totalIncidents * 0.35);
                 const barColor = isTopCritical ? '#dc2626' : entry.count > 0 ? '#2563eb' : '#94a3b8';
                 return <Cell key={`cell-${index}`} fill={barColor} />;

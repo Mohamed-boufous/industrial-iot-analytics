@@ -7,13 +7,18 @@ import { useState, useEffect, useRef, useCallback } from 'react';
  * @param {string} url - URL du WebSocket (ex: '/ws/alerts' ou '/ws/sensors')
  * @returns {object} { messages, lastMessage, isConnected }
  */
-export function useWebSocket(url) {
+export function useWebSocket(url, onMessageCallback = null) {
   const [messages, setMessages] = useState([]);
   const [lastMessage, setLastMessage] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
   
   const wsRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
+  const callbackRef = useRef(onMessageCallback);
+
+  useEffect(() => {
+    callbackRef.current = onMessageCallback;
+  }, [onMessageCallback]);
 
   const connect = useCallback(() => {
     // Calcul automatique de l'URL absolue WebSocket si chemin relatif
@@ -34,6 +39,10 @@ export function useWebSocket(url) {
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
+          // Traitement synchrone immédiat pour chaque message unitaire
+          if (callbackRef.current) {
+            callbackRef.current(data);
+          }
           setLastMessage(data);
           // Conserve un historique glissant des 100 derniers messages en mémoire
           setMessages((prev) => [data, ...prev.slice(0, 99)]);

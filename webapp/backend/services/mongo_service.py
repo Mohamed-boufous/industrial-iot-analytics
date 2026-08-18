@@ -305,18 +305,28 @@ class MongoService:
                 time_query["$lte"] = end_date
             query_alerts["timestamp"] = time_query
 
-        total_alerts = db[settings.COLLECTION_ALERTS].count_documents(query_alerts)
-
-        LOCATION_LABELS = {
-            "tangier_med_hub": "Hub Logistique Tanger Med",
-            "agadir_entrepot_central": "Entrepot Central (Agadir)",
-            "transformateur_general": "Transformateur General",
-            "station_solaire_dakhla": "Station Solaire Dakhla",
-            "agadir_serre_1": "Serre Maraichere 1 (Agadir)",
-            "stockage_legumes_ch1": "Chambre Stockage Legumes 1",
-            "zone_pompage_nord": "Station Pompage Nord",
-            "conditionnement_chambre_2": "Chambre Conditionnement 2"
+        # Mapping canonique des emplacements vers les villes / régions d'exploitation AzurA
+        LOCATION_TO_CITY = {
+            "agadir_serre_1": "Agadir",
+            "agadir_chambre_froide_2": "Agadir",
+            "agadir_station_pompage": "Agadir",
+            "agadir_reseau_principal": "Agadir",
+            "agadir_entrepot_central": "Agadir",
+            "groupe_secours_agadir": "Agadir",
+            "transformateur_general": "Agadir",
+            "stockage_legumes_ch1": "Agadir",
+            "stockage_legumes_ch2": "Agadir",
+            "zone_pompage_nord": "Agadir",
+            "conditionnement_chambre_2": "Agadir",
+            "dakhla_station_emballage": "Dakhla",
+            "dakhla_dessalement_p1": "Dakhla",
+            "station_solaire_dakhla": "Dakhla",
+            "tangier_med_hub": "Tanger Med",
+            "casablanca_logistique": "Casablanca",
+            "kenitra_station_filtrage": "Kenitra"
         }
+
+        ALL_CITIES = ["Agadir", "Dakhla", "Tanger Med", "Casablanca", "Kenitra"]
 
         pipeline = [
             {"$match": query_alerts},
@@ -325,36 +335,46 @@ class MongoService:
                     "_id": "$location",
                     "count": {"$sum": 1}
                 }
-            },
-            {"$sort": {"count": DESCENDING}}
+            }
         ]
 
         raw_locs = list(db[settings.COLLECTION_ALERTS].aggregate(pipeline))
-        results = []
+        city_counts = {city: 0 for city in ALL_CITIES}
 
         for item in raw_locs:
-            loc_id = item.get("_id") or "Inconnu"
+            loc_id = str(item.get("_id") or "").lower().strip()
             cnt = item.get("count", 0)
+            
+            # Détermination de la ville
+            resolved_city = LOCATION_TO_CITY.get(loc_id)
+            if not resolved_city:
+                if "agadir" in loc_id or "serre" in loc_id or "stockage" in loc_id or "transformateur" in loc_id:
+                    resolved_city = "Agadir"
+                elif "dakhla" in loc_id:
+                    resolved_city = "Dakhla"
+                elif "tang" in loc_id:
+                    resolved_city = "Tanger Med"
+                elif "casa" in loc_id:
+                    resolved_city = "Casablanca"
+                elif "kenitra" in loc_id:
+                    resolved_city = "Kenitra"
+                else:
+                    resolved_city = "Agadir"
+
+            city_counts[resolved_city] = city_counts.get(resolved_city, 0) + cnt
+
+        total_alerts = sum(city_counts.values())
+        results = []
+        for city, cnt in city_counts.items():
             pct = round((cnt / total_alerts * 100), 1) if total_alerts > 0 else 0.0
             results.append({
-                "location_id": loc_id,
-                "label": LOCATION_LABELS.get(loc_id, loc_id),
+                "location_id": city.lower().replace(" ", "_"),
+                "label": city,
                 "count": cnt,
                 "percentage": pct
             })
 
-        # Si certains emplacements n'ont aucune alerte, les inclure avec 0
-        existing_ids = {r["location_id"] for r in results}
-        for loc_id, loc_name in LOCATION_LABELS.items():
-            if loc_id not in existing_ids:
-                results.append({
-                    "location_id": loc_id,
-                    "label": loc_name,
-                    "count": 0,
-                    "percentage": 0.0
-                })
-
-        # Trier par nombre d'alertes décroissant
+        # Trier par nombre d'incidents décroissant
         results.sort(key=lambda x: x["count"], reverse=True)
         return results
 

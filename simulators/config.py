@@ -67,31 +67,31 @@ SENSOR_PROFILES = {
 }
 
 # Liste des capteurs simulés actifs (15 capteurs : 3 par type)
-# Cadence optimisée et fluide : 1 envoi toutes les 1.0s à 1.2s pour chaque capteur
+# Liste des 15 capteurs simulés actifs (cadence uniforme et synchronisée : 2.0s pour tous)
 ACTIVE_SENSORS = [
     # ── Température (Chambres froides & Serres AzurA) ──
-    {"type": "temperature", "id": "sensor_temp_001", "loc": "agadir_serre_1",          "interval": 1.0},
-    {"type": "temperature", "id": "sensor_temp_002", "loc": "agadir_chambre_froide_2",  "interval": 1.0},
-    {"type": "temperature", "id": "sensor_temp_003", "loc": "dakhla_station_emballage", "interval": 1.2},
+    {"type": "temperature", "id": "sensor_temp_001", "loc": "agadir_serre_1",          "interval": 2.0},
+    {"type": "temperature", "id": "sensor_temp_002", "loc": "agadir_chambre_froide_2",  "interval": 2.0},
+    {"type": "temperature", "id": "sensor_temp_003", "loc": "dakhla_station_emballage", "interval": 2.0},
 
     # ── Vibration (Moteurs & Pompes d'irrigation) ──
-    {"type": "vibration",   "id": "sensor_vib_001",  "loc": "agadir_station_pompage",   "interval": 1.0},
-    {"type": "vibration",   "id": "sensor_vib_002",  "loc": "tangier_med_hub",          "interval": 1.0},
-    {"type": "vibration",   "id": "sensor_vib_003",  "loc": "casablanca_logistique",    "interval": 1.2},
+    {"type": "vibration",   "id": "sensor_vib_001",  "loc": "agadir_station_pompage",   "interval": 2.0},
+    {"type": "vibration",   "id": "sensor_vib_002",  "loc": "tangier_med_hub",          "interval": 2.0},
+    {"type": "vibration",   "id": "sensor_vib_003",  "loc": "casablanca_logistique",    "interval": 2.0},
 
     # ── Pression (Conduites d'eau & Réseau hydraulique) ──
-    {"type": "pression",    "id": "sensor_pres_001", "loc": "agadir_reseau_principal",  "interval": 1.0},
-    {"type": "pression",    "id": "sensor_pres_002", "loc": "kenitra_station_filtrage", "interval": 1.0},
-    {"type": "pression",    "id": "sensor_pres_003", "loc": "dakhla_dessalement_p1",    "interval": 1.2},
+    {"type": "pression",    "id": "sensor_pres_001", "loc": "agadir_reseau_principal",  "interval": 2.0},
+    {"type": "pression",    "id": "sensor_pres_002", "loc": "kenitra_station_filtrage", "interval": 2.0},
+    {"type": "pression",    "id": "sensor_pres_003", "loc": "dakhla_dessalement_p1",    "interval": 2.0},
 
     # ── Humidité (Entrepôts de stockage des récoltes) ──
-    {"type": "humidite",    "id": "sensor_hum_001",  "loc": "agadir_entrepot_central",  "interval": 1.0},
-    {"type": "humidite",    "id": "sensor_hum_002",  "loc": "stockage_legumes_ch1",     "interval": 1.2},
-    {"type": "humidite",    "id": "sensor_hum_003",  "loc": "stockage_legumes_ch2",     "interval": 1.2},
+    {"type": "humidite",    "id": "sensor_hum_001",  "loc": "agadir_entrepot_central",  "interval": 2.0},
+    {"type": "humidite",    "id": "sensor_hum_002",  "loc": "stockage_legumes_ch1",     "interval": 2.0},
+    {"type": "humidite",    "id": "sensor_hum_003",  "loc": "stockage_legumes_ch2",     "interval": 2.0},
 
     # ── Consommation électrique (Transformateurs & Groupes électrogènes) ──
-    {"type": "consommation", "id": "sensor_pow_001",  "loc": "transformateur_general",   "interval": 1.0},
-    {"type": "consommation", "id": "sensor_pow_002",  "loc": "groupe_secours_agadir",    "interval": 1.0},
-    {"type": "consommation", "id": "sensor_pow_003",  "loc": "station_solaire_dakhla",   "interval": 1.2},
+    {"type": "consommation", "id": "sensor_pow_001",  "loc": "transformateur_general",   "interval": 2.0},
+    {"type": "consommation", "id": "sensor_pow_002",  "loc": "groupe_secours_agadir",    "interval": 2.0},
+    {"type": "consommation", "id": "sensor_pow_003",  "loc": "station_solaire_dakhla",   "interval": 2.0},
 ]
 
