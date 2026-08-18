@@ -146,7 +146,12 @@ export function SensorTypeChart({
 
       const lastPt = coords[coords.length - 1];
       const latestValue = validPoints[validPoints.length - 1].value;
-      const latestStatus = validPoints[validPoints.length - 1].status;
+      let latestStatus = "NORMAL";
+      if (latestValue > normMax) {
+        latestStatus = "HIGH";
+      } else if (latestValue < normMin) {
+        latestStatus = "LOW";
+      }
 
       return {
         sensor,
@@ -159,7 +164,7 @@ export function SensorTypeChart({
         latestStatus
       };
     });
-  }, [sensorsData, minTime, maxTime, yMin, yMax]);
+  }, [sensorsData, minTime, maxTime, yMin, yMax, normMin, normMax]);
 
   // Tous les points visibles pour le pointage 2D de haute précision
   const allVisiblePoints = useMemo(() => {

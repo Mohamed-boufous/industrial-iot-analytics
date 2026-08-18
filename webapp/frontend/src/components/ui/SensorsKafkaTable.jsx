@@ -47,12 +47,34 @@ const ALL_SENSORS_METADATA = [
   { id: "sensor_pow_003", type: "consommation", loc: "station_solaire_dakhla", color: "#f59e0b" }
 ];
 
-export function SensorsKafkaTable({ sensorsMap = {} }) {
+export function SensorsKafkaTable({ sensorsMap = {}, thresholdsConfig = null }) {
   const [isStreaming, setIsStreaming] = useState(true);
   const [frozenSensors, setFrozenSensors] = useState({});
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdatedTime, setLastUpdatedTime] = useState(Date.now());
   const [showClickMeHint, setShowClickMeHint] = useState(true);
+  const [dynamicThresholds, setDynamicThresholds] = useState(thresholdsConfig);
+
+  // Chargement / Actualisation périodique des seuils depuis l'API MongoDB
+  useEffect(() => {
+    if (thresholdsConfig) {
+      setDynamicThresholds(thresholdsConfig);
+      return;
+    }
+    const fetchThresholds = () => {
+      fetch('/api/settings/thresholds')
+        .then(res => res.json())
+        .then(data => {
+          if (data && data.thresholds) {
+            setDynamicThresholds(data.thresholds);
+          }
+        })
+        .catch(() => {});
+    };
+    fetchThresholds();
+    const interval = setInterval(fetchThresholds, 3000);
+    return () => clearInterval(interval);
+  }, [thresholdsConfig]);
 
   // Minuteur automatique de 20s pour masquer l'indice "Click me"
   useEffect(() => {
@@ -98,27 +120,17 @@ export function SensorsKafkaTable({ sensorsMap = {} }) {
 
     // Snapshot direct depuis le dictionnaire temps réel en mémoire
     const freshSnapshot = {};
-    Object.entries(sensorsMap).forEach(([sId, data]) => {
-      freshSnapshot[sId] = { ...data };
-    });
-
     fetch('/api/stats/sensors-state')
       .then(res => res.json())
       .then(data => {
-        if (data && Array.isArray(data.latest)) {
+        if (data && data.latest) {
           data.latest.forEach(item => {
             if (item.device_id) {
-              const prev = freshSnapshot[item.device_id] || {};
               freshSnapshot[item.device_id] = {
-                ...prev,
-                id: item.device_id,
-                type: item.device_type || prev.type,
-                loc: item.location || prev.loc,
-                unit: item.unit || prev.unit,
-                latestValue: Number(item.value),
-                value: Number(item.value),
+                latestValue: item.value,
                 latestTimestamp: new Date(item.timestamp || Date.now()).getTime(),
-                timestamp: item.timestamp
+                timestamp: item.timestamp,
+                status: item.status
               };
             }
           });
@@ -127,7 +139,6 @@ export function SensorsKafkaTable({ sensorsMap = {} }) {
         setLastUpdatedTime(Date.now());
       })
       .catch(() => {
-        setFrozenSensors(freshSnapshot);
         setLastUpdatedTime(Date.now());
       })
       .finally(() => {
@@ -135,19 +146,26 @@ export function SensorsKafkaTable({ sensorsMap = {} }) {
       });
   };
 
-  // Construction des 15 lignes du tableau avec statut et seuils en direct
+  // Construction des 15 lignes du tableau avec statut et seuils dynamiques en direct
   const rows = useMemo(() => {
     const currentDataSource = isStreaming ? sensorsMap : frozenSensors;
 
     return ALL_SENSORS_METADATA.map(meta => {
       const liveData = currentDataSource[meta.id];
-      const cfg = SENSOR_TYPE_CONFIGS[meta.type] || { label: meta.type, unit: "", normal_range: [0, 100] };
-      const [normMin, normMax] = cfg.normal_range;
+      const defaultCfg = SENSOR_TYPE_CONFIGS[meta.type] || { label: meta.type, unit: "", normal_range: [0, 100] };
+      const dynCfg = dynamicThresholds && dynamicThresholds[meta.type];
+
+      const normMin = dynCfg ? dynCfg.min : defaultCfg.normal_range[0];
+      const normMax = dynCfg ? dynCfg.max : defaultCfg.normal_range[1];
+      const unit = dynCfg ? dynCfg.unit : defaultCfg.unit;
+      const label = dynCfg ? dynCfg.label : defaultCfg.label;
 
       let value = null;
       let timestamp = Date.now();
+      let rawStatus = null;
 
       if (liveData) {
+        rawStatus = liveData.status;
         if (typeof liveData.latestValue === "number" && !isNaN(liveData.latestValue)) {
           value = liveData.latestValue;
           timestamp = liveData.latestTimestamp || timestamp;
@@ -158,6 +176,7 @@ export function SensorsKafkaTable({ sensorsMap = {} }) {
           const lastPt = liveData.points[liveData.points.length - 1];
           value = lastPt.value;
           timestamp = lastPt.time || timestamp;
+          rawStatus = lastPt.status || rawStatus;
         }
       }
 
@@ -169,11 +188,12 @@ export function SensorsKafkaTable({ sensorsMap = {} }) {
       let statusLabel = "Normal";
       let statusColor = "#22c55e";
 
-      if (displayVal > normMax) {
+      // Évaluation dynamique par rapport aux bornes réelles MongoDB
+      if (displayVal > normMax || (rawStatus && rawStatus.includes("HIGH"))) {
         status = "HIGH";
         statusLabel = "Haut";
         statusColor = "#ef4444";
-      } else if (displayVal < normMin) {
+      } else if (displayVal < normMin || (rawStatus && rawStatus.includes("LOW"))) {
         status = "LOW";
         statusLabel = "Bas";
         statusColor = "#0284c7";
@@ -188,11 +208,11 @@ export function SensorsKafkaTable({ sensorsMap = {} }) {
 
       return {
         id: meta.id,
-        device_type: cfg.label,
+        device_type: label,
         location: meta.loc,
         value: displayVal.toFixed(1),
-        unit: cfg.unit,
-        nominalRange: `${normMin} - ${normMax} ${cfg.unit}`,
+        unit: unit,
+        nominalRange: `${normMin} - ${normMax} ${unit}`,
         status,
         statusLabel,
         statusColor,
@@ -201,7 +221,7 @@ export function SensorsKafkaTable({ sensorsMap = {} }) {
         hasRealData
       };
     });
-  }, [sensorsMap, frozenSensors, isStreaming]);
+  }, [sensorsMap, frozenSensors, isStreaming, dynamicThresholds]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>

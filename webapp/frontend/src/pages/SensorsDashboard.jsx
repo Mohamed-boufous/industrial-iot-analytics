@@ -61,6 +61,42 @@ export default function SensorsDashboard() {
   const [sensorSeries, setSensorSeries] = useState({});
   const [currentTime, setCurrentTime] = useState(Date.now());
   const [lastUpdatedTime, setLastUpdatedTime] = useState(Date.now());
+  const [dynamicThresholds, setDynamicThresholds] = useState(null);
+
+  // Chargement / Rafraîchissement périodique des seuils depuis MongoDB (Single Source of Truth)
+  useEffect(() => {
+    const fetchThresholds = () => {
+      fetch('/api/settings/thresholds')
+        .then(res => res.json())
+        .then(data => {
+          if (data && data.thresholds) {
+            setDynamicThresholds(data.thresholds);
+          }
+        })
+        .catch(() => {});
+    };
+    fetchThresholds();
+    const interval = setInterval(fetchThresholds, 2500);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Fusion dynamique des seuils MongoDB avec les métadonnées de configuration UI
+  const activeConfigs = useMemo(() => {
+    const configs = { ...SENSOR_TYPE_CONFIGS };
+    if (dynamicThresholds) {
+      Object.entries(dynamicThresholds).forEach(([key, val]) => {
+        if (configs[key]) {
+          configs[key] = {
+            ...configs[key],
+            label: val.label || configs[key].label,
+            unit: val.unit || configs[key].unit,
+            normal_range: [Number(val.min), Number(val.max)]
+          };
+        }
+      });
+    }
+    return configs;
+  }, [dynamicThresholds]);
 
   // Horloge temps réel continue : fait glisser l'axe X chaque seconde
   useEffect(() => {
@@ -237,7 +273,7 @@ export default function SensorsDashboard() {
     const now = Date.now();
     const windowStart = now - 45000;
 
-    Object.entries(SENSOR_TYPE_CONFIGS).forEach(([typeKey, cfg]) => {
+    Object.entries(activeConfigs).forEach(([typeKey, cfg]) => {
       const midVal = (cfg.normal_range[0] + cfg.normal_range[1]) / 2;
 
       cfg.defaultIds.forEach((id, sIdx) => {
@@ -267,7 +303,7 @@ export default function SensorsDashboard() {
     });
 
     return groups;
-  }, [sensorSeries]);
+  }, [sensorSeries, activeConfigs]);
 
   return (
     <div style={{ maxWidth: '1440px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '1.5rem', paddingBottom: '3rem' }}>
@@ -292,8 +328,7 @@ export default function SensorsDashboard() {
           border: '1px solid rgba(2, 132, 199, 0.25)',
           boxShadow: '0 0 16px rgba(2, 132, 199, 0.12)',
           marginBottom: '0.75rem',
-          backdropFilter: 'blur(8px)',
-          transition: 'all 0.3s ease'
+          backdropFilter: 'blur(8px)'
         }}>
           {/* Point Pulse indicateur Bleu Telemetrique */}
           <span style={{
@@ -317,14 +352,13 @@ export default function SensorsDashboard() {
               borderRadius: '50%',
               width: '8px',
               height: '8px',
-              backgroundColor: '#0284c7',
-              boxShadow: '0 0 8px #0284c7'
+              backgroundColor: '#0284c7'
             }} />
           </span>
 
           {/* Texte anime StrokeText pour Badge */}
           <StrokeText
-            text="TELEMETRIE CAPTEURS"
+            text="FLUX TEMPS REEL KAFKA"
             strokeColor="#0284c7"
             fillColor="#0284c7"
             strokeWidth={1.0}
@@ -344,7 +378,7 @@ export default function SensorsDashboard() {
         {/* Titre StrokeText Principal Interactif Centre */}
         <div style={{ width: '100%', maxWidth: '780px', display: 'flex', justifyContent: 'center', margin: '0 auto' }}>
           <StrokeText
-            text="Flux Telemetrique en Direct"
+            text="Supervision Continue des Capteurs"
             strokeColor="var(--azura-text)"
             fillColor="var(--azura-text)"
             strokeWidth={1.2}
@@ -362,38 +396,30 @@ export default function SensorsDashboard() {
         </div>
       </div>
 
-      {/* Barre de Statuts & Controles avec MetalButton */}
+      {/* Barre de Statut avec Indicateurs Dynamiques et Horloge Flottante */}
       <div style={{
         display: "flex",
         justifyContent: "space-between",
         alignItems: "center",
         flexWrap: "wrap",
-        gap: "14px",
-        padding: "14px 20px",
+        gap: "12px",
+        padding: "12px 18px",
         backgroundColor: "var(--azura-card-bg)",
-        border: "1px solid var(--azura-border)",
         borderRadius: "14px",
-        boxShadow: "0 2px 10px rgba(0, 0, 0, 0.03)"
+        border: "1px solid var(--azura-border)",
+        boxShadow: "0 2px 8px rgba(0, 0, 0, 0.02)"
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-          {/* Badge 3D Statut Telemetrie */}
-          <div
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "8px",
-              padding: "8px 16px",
-              borderRadius: "12px",
-              backgroundColor: isConnected ? "rgba(34, 197, 94, 0.09)" : "rgba(239, 68, 68, 0.09)",
-              border: `1px solid ${isConnected ? "rgba(34, 197, 94, 0.35)" : "rgba(239, 68, 68, 0.35)"}`,
-              boxShadow: isConnected
-                ? "inset 0 1px 1px rgba(255, 255, 255, 0.8), 0 2px 6px rgba(34, 197, 94, 0.12)"
-                : "inset 0 1px 1px rgba(255, 255, 255, 0.8), 0 2px 6px rgba(239, 68, 68, 0.12)",
-              cursor: "default",
-              userSelect: "none",
-              transition: "all 0.25s cubic-bezier(0.4, 0, 0.2, 1)"
-            }}
-          >
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+          {/* Statut Connexion WebSocket */}
+          <div style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "8px",
+            padding: "8px 16px",
+            borderRadius: "12px",
+            backgroundColor: isConnected ? "rgba(34, 197, 94, 0.08)" : "rgba(239, 68, 68, 0.08)",
+            border: `1px solid ${isConnected ? "rgba(34, 197, 94, 0.35)" : "rgba(239, 68, 68, 0.35)"}`
+          }}>
             <span style={{
               position: "relative",
               display: "inline-flex",
@@ -491,7 +517,7 @@ export default function SensorsDashboard() {
         gap: "24px",
         width: "100%"
       }}>
-        {Object.entries(SENSOR_TYPE_CONFIGS).map(([typeKey, cfg]) => (
+        {Object.entries(activeConfigs).map(([typeKey, cfg]) => (
           <SensorTypeChart
             key={typeKey}
             typeKey={typeKey}
@@ -504,7 +530,7 @@ export default function SensorsDashboard() {
       </div>
 
       {/* Section Tableau Télémétrique des 15 Capteurs */}
-      <SensorsKafkaTable sensorsMap={sensorSeries} />
+      <SensorsKafkaTable sensorsMap={sensorSeries} thresholdsConfig={dynamicThresholds} />
     </div>
   );
 }
