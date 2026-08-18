@@ -1,11 +1,13 @@
 import os
-from pyspark.sql import SparkSession
-from pyspark.sql.types import StructType, StructField, StringType, DoubleType, TimestampType
-from pyspark.sql.functions import from_json, to_json, struct, col, when
+import json
 import time
+import urllib.request
+from pyspark.sql import SparkSession
+from pyspark.sql.types import StructType, StructField, StringType, DoubleType
+from pyspark.sql.functions import from_json, struct, col, when
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SINGLE SOURCE OF TRUTH : Seuils d'Anomalie Centralisés dans MongoDB
+# SINGLE SOURCE OF TRUTH : Seuils d'Anomalie Dynamiques (MongoDB / FastAPI)
 # ══════════════════════════════════════════════════════════════════════════════
 SENSOR_THRESHOLDS_DEFAULT = {
     "temperature":   {"min": 5.0,   "max": 80.0},
@@ -16,94 +18,59 @@ SENSOR_THRESHOLDS_DEFAULT = {
     "battery":       {"min": 20.0,  "max": 100.0}
 }
 
-def load_thresholds_from_mongodb() -> dict:
-    """Charge les seuils depuis la collection system_configuration de MongoDB (Single Source of Truth)."""
-    try:
-        from pymongo import MongoClient
-        mongo_uri = os.environ.get("MONGO_URI", "mongodb://mongos-router:27017")
-        client = MongoClient(mongo_uri, serverSelectionTimeoutMS=4000)
-        doc = client["azura_iot"]["system_configuration"].find_one({"_id": "thresholds_config"})
-        if doc and "thresholds" in doc:
-            t = doc["thresholds"]
-            print("[Spark] ✅ Seuils charges dynamiquement depuis MongoDB 'system_configuration' !")
-            return {
-                k: {"min": float(v["min"]), "max": float(v["max"])}
-                for k, v in t.items()
-            }
-    except Exception as e:
-        print(f"[Spark] ⚠️ Impossible de lire les seuils depuis MongoDB ({e}), utilisation des valeurs par defaut.")
-    return SENSOR_THRESHOLDS_DEFAULT
+_cached_thresholds = None
+_last_fetch_time = 0.0
 
-SENSOR_THRESHOLDS = load_thresholds_from_mongodb()
+def get_dynamic_thresholds() -> dict:
+    """
+    Récupère en temps réel les seuils définis dans MongoDB (via FastAPI /api/settings/thresholds).
+    Cache en mémoire avec rafraîchissement automatique toutes les 2.0 secondes.
+    """
+    global _cached_thresholds, _last_fetch_time
+    now = time.time()
+    if _cached_thresholds is None or (now - _last_fetch_time > 2.0):
+        try:
+            req = urllib.request.Request(
+                "http://azura-api:8000/api/settings/thresholds",
+                headers={"User-Agent": "SparkStructuredStreamingEngine"}
+            )
+            with urllib.request.urlopen(req, timeout=1.5) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                if "thresholds" in data:
+                    _cached_thresholds = {
+                        k: {"min": float(v["min"]), "max": float(v["max"])}
+                        for k, v in data["thresholds"].items()
+                    }
+                    _last_fetch_time = now
+                    print(f"[Spark Dynamic] 🔄 Seuils recharges depuis MongoDB (Pression Max: {_cached_thresholds.get('pression', {}).get('max')})")
+                    return _cached_thresholds
+        except Exception as e:
+            pass
+            
+    return _cached_thresholds or SENSOR_THRESHOLDS_DEFAULT
 
 def create_spark_session():
-    """
-    Initialise et retourne une SparkSession configurée pour notre projet AzurA.
-    """
+    """Initialise la SparkSession optimisée pour le streaming."""
     spark = SparkSession.builder \
-        .appName("AzurA-Streaming") \
-        .config("spark.sql.shuffle.partitions", "6") \
+        .appName("AzurA-Streaming-Processor") \
+        .config("spark.sql.shuffle.partitions", "4") \
         .getOrCreate()
-        
-    # On réduit le niveau de logs pour ne pas polluer la console avec des informations inutiles
     spark.sparkContext.setLogLevel("WARN")
-    
     return spark
 
-if __name__ == "__main__":
-    print("Initialisation de la SparkSession...")
-    spark = create_spark_session()
-    print("SparkSession créée avec succès !")
-    
-    # Étape 1 : Lecture depuis Kafka (Source)
-    print("Connexion au topic Kafka 'iot-raw-data'...")
-    df_raw = spark.readStream \
-        .format("kafka") \
-        .option("kafka.bootstrap.servers", "kafka1:19092,kafka2:19092,kafka3:19092") \
-        .option("subscribe", "iot-raw-data") \
-        .option("kafka.group.id", "spark-azura-group") \
-        .option("startingOffsets", "earliest") \
-        .load()
-        
-    # Étape 1.1 : Traduction du Binaire vers Texte (Casting)
-    print("Conversion des données binaires en texte...")
-    df_string = df_raw.selectExpr("CAST(value AS STRING)")
-        
-    # Étape 1.2 : Parsing du JSON (Création de colonnes)
-    print("Définition du schéma et parsing du JSON...")
-    
-    metadata_schema = StructType([
-        StructField("manufacturer", StringType(), True),
-        StructField("model", StringType(), True),
-        StructField("firmware_version", StringType(), True),
-        StructField("calibration_date", StringType(), True),
-    ])
+def process_micro_batch(batch_df, batch_id):
+    """
+    Fonction exécutée à chaque micro-lot de streaming (Driver).
+    Applique dynamiquement les seuils à jour sans aucun redémarrage nécessaire.
+    """
+    if batch_df.rdd.isEmpty():
+        return
 
+    # 1. Chargement dynamique des seuils à jour
+    t = get_dynamic_thresholds()
 
-    json_schema = StructType([
-        StructField("device_id", StringType(), True),
-        StructField("device_type", StringType(), True),
-        StructField("location", StringType(), True),
-        StructField("timestamp", StringType(), True),
-        StructField("value", DoubleType(), True),
-        StructField("unit", StringType(), True),
-        StructField("quality_score", DoubleType(), True),
-        StructField("battery_level", DoubleType(), True),
-        StructField("signal_strength", DoubleType(), True),
-        StructField("metadata", metadata_schema, True),
-    ])
-    
-    df_parsed = df_string.withColumn("data", from_json("value", json_schema)) \
-                         .select("data.*")
-
-    # ──────────────────────────────────────────────────────────────────────
-    # Étape 1.3 : Détection d'Anomalies en Temps Réel (Calcul du 'status')
-    # ──────────────────────────────────────────────────────────────────────
-    print("Application des règles de détection d'anomalies...")
-
-    t = SENSOR_THRESHOLDS  # Alias court pour lisibilité
-
-    df_with_status = df_parsed.withColumn(
+    # 2. Évaluation vectorisée Catalyst du statut
+    df_with_status = batch_df.withColumn(
         "status",
         when((col("device_type") == "temperature") & (col("value") < t["temperature"]["min"]), "CRITICAL_TEMP_LOW")
         .when((col("device_type") == "temperature") & (col("value") > t["temperature"]["max"]), "CRITICAL_TEMP_HIGH")
@@ -118,55 +85,81 @@ if __name__ == "__main__":
         .when(col("battery_level") < t["battery"]["min"], "LOW_BATTERY")
         .otherwise("NORMAL")
     )
-        
-    # ──────────────────────────────────────────────────────────────────────
-    # Étape 2 : Écriture des DONNÉES BRUTES dans MongoDB
-    # ──────────────────────────────────────────────────────────────────────
-    print("Démarrage du flux vers MongoDB (données brutes)...")
-    query_mongo = df_parsed.writeStream \
+
+    # 3. Écriture MongoDB raw_measurements (données brutes horodatées)
+    df_with_status.write \
         .format("mongodb") \
         .option("spark.mongodb.connection.uri", "mongodb://mongos-router:27017") \
         .option("spark.mongodb.database", "azura_iot") \
         .option("spark.mongodb.collection", "raw_measurements") \
-        .option("checkpointLocation", "/opt/spark/checkpoints/iot-raw-data-mongo") \
-        .outputMode("append") \
-        .start()
+        .mode("append") \
+        .save()
 
-    # ──────────────────────────────────────────────────────────────────────
-    # Étape 3 : Filtrer et Publier les ALERTES EN TEMPS RÉEL dans Kafka
-    # ──────────────────────────────────────────────────────────────────────
-    # On isole uniquement les anomalies (status != NORMAL) et on les envoie
-    # vers le topic Kafka 'iot-alerts' au format JSON.
-    # ──────────────────────────────────────────────────────────────────────
-    print("Démarrage du flux d'alertes vers Kafka (topic: iot-alerts)...")
-    df_alerts = df_with_status.filter(col("status") != "NORMAL")
-
-    # Kafka attend deux colonnes : 'key' (optionnel) et 'value' (au format JSON)
-    df_alerts_json = df_alerts.selectExpr(
+    # 4. Publication Kafka 'iot-processed' (Toutes les mesures enrichies du statut calculé)
+    df_processed = df_with_status.selectExpr(
         "CAST(device_id AS STRING) AS key",
         "to_json(struct(*)) AS value"
     )
-
-    query_alerts = df_alerts_json.writeStream \
-        .format("kafka") \
-        .option("kafka.bootstrap.servers", "kafka1:19092,kafka2:19092,kafka3:19092") \
-        .option("topic", "iot-alerts") \
-        .option("checkpointLocation", "/opt/spark/checkpoints/iot-alerts-kafka") \
-        .outputMode("append") \
-        .start()
-    print("Démarrage du flux d'iots vers Kafka (topic: iot-processed)...")
-    df_processed_json=df_with_status.selectExpr(
-        "CAST(device_id AS STRING) AS key",
-        "to_json(struct(*)) AS value"
-    )
-    query_processed = df_processed_json.writeStream \
+    df_processed.write \
         .format("kafka") \
         .option("kafka.bootstrap.servers", "kafka1:19092,kafka2:19092,kafka3:19092") \
         .option("topic", "iot-processed") \
-        .option("checkpointLocation", "/opt/spark/checkpoints/iot-processed-kafka") \
-        .outputMode("append") \
+        .save()
+
+    # 5. Publication Kafka 'iot-alerts' (Uniquement les anomalies status != 'NORMAL')
+    df_alerts = df_with_status.filter(col("status") != "NORMAL") \
+                              .selectExpr("CAST(device_id AS STRING) AS key", "to_json(struct(*)) AS value")
+    
+    if not df_alerts.rdd.isEmpty():
+        df_alerts.write \
+            .format("kafka") \
+            .option("kafka.bootstrap.servers", "kafka1:19092,kafka2:19092,kafka3:19092") \
+            .option("topic", "iot-alerts") \
+            .save()
+
+if __name__ == "__main__":
+    print("--- Démarrage du Spark Structured Streaming Engine (Dynamique) ---")
+    spark = create_spark_session()
+    
+    # Schéma de décodage des messages IoT
+    metadata_schema = StructType([
+        StructField("manufacturer", StringType(), True),
+        StructField("model", StringType(), True),
+        StructField("firmware_version", StringType(), True),
+        StructField("calibration_date", StringType(), True),
+    ])
+
+    json_schema = StructType([
+        StructField("device_id", StringType(), True),
+        StructField("device_type", StringType(), True),
+        StructField("location", StringType(), True),
+        StructField("timestamp", StringType(), True),
+        StructField("value", DoubleType(), True),
+        StructField("unit", StringType(), True),
+        StructField("quality_score", DoubleType(), True),
+        StructField("battery_level", DoubleType(), True),
+        StructField("signal_strength", DoubleType(), True),
+        StructField("metadata", metadata_schema, True),
+    ])
+
+    # Lecture continue depuis Kafka 'iot-raw-data'
+    df_raw = spark.readStream \
+        .format("kafka") \
+        .option("kafka.bootstrap.servers", "kafka1:19092,kafka2:19092,kafka3:19092") \
+        .option("subscribe", "iot-raw-data") \
+        .option("kafka.group.id", "spark-azura-group") \
+        .option("startingOffsets", "latest") \
+        .load()
+
+    df_parsed = df_raw.selectExpr("CAST(value AS STRING) as json_str") \
+                      .select(from_json("json_str", json_schema).alias("data")) \
+                      .select("data.*")
+
+    # Démarrage du pipeline avec foreachBatch pour application dynamique des seuils à chaque micro-lot
+    query = df_parsed.writeStream \
+        .foreachBatch(process_micro_batch) \
+        .option("checkpointLocation", "/opt/spark/checkpoints/dynamic-processor") \
         .start()
-    # On maintient la SparkSession active pour les 3 requêtes simultanées (MongoDB, iot-alerts, iot-processed)
-    spark.streams.awaitAnyTermination()
 
-
+    print("[✓ Spark] Streaming Query démarrée avec succès avec seuils dynamiques !")
+    query.awaitTermination()
