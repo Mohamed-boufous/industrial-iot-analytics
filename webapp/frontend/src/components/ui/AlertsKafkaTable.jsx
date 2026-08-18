@@ -114,7 +114,18 @@ export function AlertsKafkaTable({ alerts = [], thresholdsConfig = null, onRefre
       .then((res) => res.json())
       .then((data) => {
         if (data && Array.isArray(data.alerts)) {
-          setDisplayedAlerts(data.alerts.slice(0, 10));
+          let list = data.alerts;
+          if (thresholdsConfig) {
+            list = list.filter(al => {
+              const type = al.device_type || al.metric;
+              const cfg = thresholdsConfig[type];
+              if (!cfg) return true;
+              const val = typeof al.value === "number" ? al.value : typeof al.current_value === "number" ? al.current_value : null;
+              if (val === null) return true;
+              return val < Number(cfg.min) || val > Number(cfg.max);
+            });
+          }
+          setDisplayedAlerts(list.slice(0, 10));
           setLastUpdatedTime(Date.now());
         }
       })

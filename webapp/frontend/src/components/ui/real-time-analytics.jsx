@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { ShieldCheck, WarningOctagon, Waveform, Radio, ArrowUp, ArrowDown } from "@phosphor-icons/react";
 import { useWebSocket } from "../../hooks/useWebSocket";
 import { RollingTime } from "./RollingTime";
@@ -23,20 +23,23 @@ const SENSOR_DIAGNOSTICS = {
   CRITICAL_PRES_HIGH: "Surpression Circuit",
   CRITICAL_PRES_LOW:  "Chute Pression / Fuite",
   CRITICAL_HUM_HIGH:  "Sur-Humidite / Condensation",
-  CRITICAL_HUM_LOW:   "Air Trop Sec",
-  CRITICAL_POW_HIGH:  "Surcharge Electrique",
-  CRITICAL_POW_LOW:   "Sous-Charge / Deconnexion",
+  CRITICAL_HUM_LOW:   "Air Excessif Sec",
+  CRITICAL_POW_HIGH:  "Surconsommation Electrique",
+  CRITICAL_POW_LOW:   "Chute Alimentation / Sous-Tension",
+  LOW_BATTERY:        "Niveau Batterie Faible",
+  HIGH:               "Depassement de Seuil Haut",
+  LOW:                "Chute en-dessous de Seuil Bas",
+  ANOMALY:            "Derive Critique"
 };
 
-// Palette de 8 couleurs distinctes pour identifier chaque capteur (tete de courbe + carte)
-// Exclut formellement : Rouge (reserve depassement haut), Bleu/Cyan (reserve chute basse), Blanc et Noir
+// Palette de 8 couleurs vives et 100% DISTINCTES pour les lignes d'alerte des capteurs
 const SENSOR_ID_COLORS = [
-  "#facc15", // 1. Jaune Ambre / Or Vif
-  "#c084fc", // 2. Violet Neon / Pourpre
-  "#34d399", // 3. Vert Emeraude / Menthe
-  "#fb923c", // 4. Orange Vif / Mandarine
-  "#f472b6", // 5. Rose Magenta Flash
-  "#a3e635", // 6. Vert Lime Acidule
+  "#ef4444", // 1. Rouge Vif
+  "#06b6d4", // 2. Cyan Electrique
+  "#f59e0b", // 3. Ambre Brillant
+  "#8b5cf6", // 4. Violet Neon
+  "#10b981", // 5. Emeraude
+  "#3b82f6", // 6. Bleu Royal
   "#e879f9", // 7. Fuchsia Lumineux
   "#fdba74", // 8. Peche Electrique
 ];
@@ -81,8 +84,6 @@ function calculateSeverityIndex(value, deviceType, dynamicThresholds = null) {
 }
 
 export function RealTimeAnalytics() {
-  const { lastMessage, isConnected } = useWebSocket("/ws/alerts");
-  
   const [sensorSeries, setSensorSeries] = useState({});
   const [rawAlerts, setRawAlerts] = useState([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -150,7 +151,7 @@ export function RealTimeAnalytics() {
   }, [dynamicThresholds]);
 
   // Fonction d'ajout et de synchronisation des alertes
-  const processAlertsBatch = (alerts) => {
+  const processAlertsBatch = useCallback((alerts) => {
     if (!Array.isArray(alerts) || alerts.length === 0) return;
 
     setRawAlerts((prev) => {
@@ -236,10 +237,10 @@ export function RealTimeAnalytics() {
 
       return updated;
     });
-  };
+  }, [dynamicThresholds]);
 
   // Synchronisation manuelle ou automatique (Live Refresh sans recharger la page)
-  const syncLatestAlerts = (isManual = false) => {
+  const syncLatestAlerts = useCallback((isManual = false) => {
     if (isManual) setIsRefreshing(true);
 
     fetch("/api/stats/recent-alerts")
@@ -255,24 +256,25 @@ export function RealTimeAnalytics() {
           setTimeout(() => setIsRefreshing(false), 600);
         }
       });
-  };
+  }, [processAlertsBatch]);
 
   useEffect(() => {
     syncLatestAlerts(false);
     const interval = setInterval(() => syncLatestAlerts(false), 3000);
     return () => clearInterval(interval);
-  }, []);
+  }, [syncLatestAlerts]);
 
-  // Reception en direct par flux continu (sub-seconde)
-  useEffect(() => {
-    if (!lastMessage) return;
-
-    if (lastMessage.type === "INITIAL_ALERTS_HISTORY" && Array.isArray(lastMessage.data)) {
-      processAlertsBatch(lastMessage.data);
-    } else if (lastMessage.type === "NEW_ALERT" && lastMessage.data) {
-      processAlertsBatch([lastMessage.data]);
+  // Reception synchrone en direct par flux continu WebSocket (zero perte de message)
+  const handleAlertMessage = useCallback((msg) => {
+    if (!msg) return;
+    if (msg.type === "INITIAL_ALERTS_HISTORY" && Array.isArray(msg.data)) {
+      processAlertsBatch(msg.data);
+    } else if ((msg.type === "NEW_ALERT" || msg.type === "ALERT_NOTIFICATION") && msg.data) {
+      processAlertsBatch([msg.data]);
     }
-  }, [lastMessage]);
+  }, [processAlertsBatch]);
+
+  const { isConnected } = useWebSocket("/ws/alerts", handleAlertMessage);
 
   // Fenetre glissante de temps reel : 2 minutes visibles a l'ecran
   const windowDurationMs = 120000;
@@ -280,26 +282,46 @@ export function RealTimeAnalytics() {
   const maxTime = currentTime + 4000;
   const timeRange = maxTime - minTime;
 
-  // Capteurs actifs ayant emis une alerte dans les 60 dernieres secondes
-  // Tries par device_id pour assurer une attribution de couleur stable et 100% DISTINCTE (zero collision)
-  const rawActive = Object.values(sensorSeries).filter((s) => {
-    return s.points.some((p) => p.time >= currentTime - 60000);
-  });
-  rawActive.sort((a, b) => (a.device_id || "").localeCompare(b.device_id || ""));
+  // Capteurs actifs ayant emis une alerte dans les 45 dernieres secondes
+  // et dont le dernier point est REELLEMENT une anomalie par rapport aux seuils dynamiques actuels
+  const rawActive = useMemo(() => {
+    const list = Object.values(sensorSeries).filter((s) => {
+      const recentPoints = (s.points || []).filter((p) => p.time >= currentTime - 45000);
+      if (recentPoints.length === 0) return false;
+      const latestPt = recentPoints[recentPoints.length - 1];
+      return latestPt && latestPt.severity > 0 && latestPt.direction !== "NORMAL";
+    });
+    list.sort((a, b) => (a.device_id || "").localeCompare(b.device_id || ""));
+    return list;
+  }, [sensorSeries, currentTime]);
 
   // Attribution d'une couleur UNIQUE garantie sans collision a chaque capteur actif
-  const activeSensors = rawActive.map((sensor, idx) => {
-    const assignedColor = SENSOR_ID_COLORS[idx % SENSOR_ID_COLORS.length];
-    return {
-      ...sensor,
-      uniqueColor: assignedColor,
-      points: sensor.points.map((pt) => ({
-        ...pt,
+  const activeSensors = useMemo(() => {
+    return rawActive.map((sensor, idx) => {
+      const assignedColor = SENSOR_ID_COLORS[idx % SENSOR_ID_COLORS.length];
+      return {
+        ...sensor,
         uniqueColor: assignedColor,
-      })),
-    };
-  });
+        points: (sensor.points || []).map((pt) => ({
+          ...pt,
+          uniqueColor: assignedColor,
+        })),
+      };
+    });
+  }, [rawActive]);
+
   const activeCount = activeSensors.length;
+
+  // Liste des alertes filtrees dynamiquement par rapport aux seuils actuels
+  const activeAlertsList = useMemo(() => {
+    if (!dynamicThresholds) return rawAlerts;
+    return rawAlerts.filter((al) => {
+      const devType = al.device_type || al.metric;
+      const val = typeof al.value === "number" ? al.value : typeof al.current_value === "number" ? al.current_value : 0;
+      const sevInfo = calculateSeverityIndex(val, devType, dynamicThresholds);
+      return sevInfo.direction !== "NORMAL";
+    });
+  }, [rawAlerts, dynamicThresholds]);
 
   const getX = (time) => {
     return padding.left + ((time - minTime) / timeRange) * (width - padding.left - padding.right);
@@ -991,7 +1013,7 @@ export function RealTimeAnalytics() {
 
       {/* Tableau Deroulant & Selectionnable des 10 Dernieres Alertes Kafka (Shadcn + TanStack) */}
       <AlertsKafkaTable
-        alerts={rawAlerts}
+        alerts={activeAlertsList}
         thresholdsConfig={dynamicThresholds}
         onRefresh={() => syncLatestAlerts(true)}
         isRefreshing={isRefreshing}
