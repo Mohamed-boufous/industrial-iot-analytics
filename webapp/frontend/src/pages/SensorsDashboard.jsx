@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import StrokeText from '../components/ui/StrokeText';
 import { SensorTypeChart } from '../components/ui/SensorTypeChart';
 import { SensorsKafkaTable } from '../components/ui/SensorsKafkaTable';
+import { SensorLocationModal } from '../components/ui/SensorLocationModal';
 import { MetalButton } from '../components/ui/metal-button';
 import { RollingTime } from '../components/ui/RollingTime';
 import { useWebSocket } from '../hooks/useWebSocket';
@@ -61,6 +62,7 @@ export default function SensorsDashboard() {
   const [currentTime, setCurrentTime] = useState(Date.now());
   const [lastUpdatedTime, setLastUpdatedTime] = useState(Date.now());
   const [dynamicThresholds, setDynamicThresholds] = useState(null);
+  const [selectedSensorForMap, setSelectedSensorForMap] = useState(null);
 
   // Chargement / Rafraîchissement périodique des seuils depuis MongoDB (Single Source of Truth)
   useEffect(() => {
@@ -529,8 +531,19 @@ export default function SensorsDashboard() {
         ))}
       </div>
 
-      {/* Section Tableau Télémétrique des 15 Capteurs */}
-      <SensorsKafkaTable sensorsMap={sensorSeries} thresholdsConfig={dynamicThresholds} />
+      {/* Section Tableau Telemetrique des 20 Capteurs */}
+      <SensorsKafkaTable
+        sensorsMap={sensorSeries}
+        thresholdsConfig={dynamicThresholds}
+        onSelectSensorLocation={(sensorRow) => setSelectedSensorForMap(sensorRow)}
+      />
+
+      {/* Pop-up Modale Cartographique Interactive pour le Capteur Selectionne */}
+      <SensorLocationModal
+        isOpen={!!selectedSensorForMap}
+        onClose={() => setSelectedSensorForMap(null)}
+        sensor={selectedSensorForMap}
+      />
     </div>
   );
 }
