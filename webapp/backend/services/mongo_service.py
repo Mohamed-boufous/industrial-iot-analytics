@@ -200,10 +200,10 @@ class MongoService:
         res.reverse()
         return res
 
-    def get_physical_metrics_stats(self, start_date: str = None, end_date: str = None, device_id: str = None) -> list[dict]:
+    def get_physical_metrics_stats(self, start_date: str = None, end_date: str = None, device_id: str = None, location: str = None) -> list[dict]:
         """
         Agrégation MongoDB pour calculer les métriques réelles (Moyenne, Min, Max, Nombre de mesures, Alertes)
-        pour chacun des 5 types de grandeurs physiques (Température, Humidité, Vibration, Pression, Puissance).
+        pour chacun des 5 types de grandeurs physiques filtrées optionnellement par site (location).
         """
         db = self._get_db()
         query_raw = {}
@@ -212,6 +212,10 @@ class MongoService:
         if device_id and device_id != "ALL":
             query_raw["device_id"] = device_id
             query_alerts["device_id"] = device_id
+
+        if location and location != "ALL":
+            query_raw["location"] = location
+            query_alerts["location"] = location
 
         if start_date or end_date:
             time_query = {}

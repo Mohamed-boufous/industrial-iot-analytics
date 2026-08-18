@@ -13,7 +13,9 @@ export default function StatsDashboard() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [selectedSensor, setSelectedSensor] = useState('ALL');
+  const [selectedPhysicalLocation, setSelectedPhysicalLocation] = useState('ALL');
   const [isLoading, setIsLoading] = useState(false);
+  const [isPhysicalLoading, setIsPhysicalLoading] = useState(false);
 
   // Etats des donnees
   const [kpis, setKpis] = useState({});
@@ -25,6 +27,33 @@ export default function StatsDashboard() {
   const [locationIncidents, setLocationIncidents] = useState([]);
   const [batteryCritical, setBatteryCritical] = useState([]);
 
+  // Chargement specifique des grandeurs physiques lors du changement d emplacement
+  const fetchPhysicalMetricsForLocation = useCallback(async (loc) => {
+    setIsPhysicalLoading(true);
+    try {
+      const q = new URLSearchParams();
+      if (startDate) q.append('start_date', startDate);
+      if (endDate) q.append('end_date', endDate);
+      if (selectedSensor && selectedSensor !== 'ALL') q.append('device_id', selectedSensor);
+      if (loc && loc !== 'ALL') q.append('location', loc);
+
+      const res = await fetch(`/api/stats/physical-metrics?${q.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        setPhysicalMetrics(data || []);
+      }
+    } catch (err) {
+      console.error('Erreur chargement grandeurs physiques:', err);
+    } finally {
+      setIsPhysicalLoading(false);
+    }
+  }, [startDate, endDate, selectedSensor]);
+
+  const handlePhysicalLocationChange = (loc) => {
+    setSelectedPhysicalLocation(loc);
+    fetchPhysicalMetricsForLocation(loc);
+  };
+
   // Chargement des donnees analytiques filtrées depuis l API MongoDB FastAPI
   const fetchFilteredData = useCallback(async () => {
     setIsLoading(true);
@@ -34,6 +63,11 @@ export default function StatsDashboard() {
       if (endDate) queryParams.append('end_date', endDate);
       if (selectedSensor && selectedSensor !== 'ALL') queryParams.append('device_id', selectedSensor);
 
+      const physicalParams = new URLSearchParams(queryParams);
+      if (selectedPhysicalLocation && selectedPhysicalLocation !== 'ALL') {
+        physicalParams.append('location', selectedPhysicalLocation);
+      }
+
       // Fetch parallele des 8 endpoints d aggregation
       const [resKpis, resAlerts, resRaw, resTop, resByType, resPhysical, resLoc, resBat] = await Promise.all([
         fetch(`/api/stats/filtered-kpis?${queryParams.toString()}`),
@@ -41,7 +75,7 @@ export default function StatsDashboard() {
         fetch(`/api/stats/filtered-raw?${queryParams.toString()}`),
         fetch('/api/stats/top-problematic?limit=5'),
         fetch('/api/stats/alerts-by-type'),
-        fetch(`/api/stats/physical-metrics?${queryParams.toString()}`),
+        fetch(`/api/stats/physical-metrics?${physicalParams.toString()}`),
         fetch(`/api/stats/alerts-by-location?${queryParams.toString()}`),
         fetch(`/api/stats/critical-battery?${queryParams.toString()}`)
       ]);
@@ -90,7 +124,7 @@ export default function StatsDashboard() {
     } finally {
       setIsLoading(false);
     }
-  }, [startDate, endDate, selectedSensor]);
+  }, [startDate, endDate, selectedSensor, selectedPhysicalLocation]);
 
   // Chargement automatique a chaque changement de filtre (dates, capteur, raccourci)
   useEffect(() => {
@@ -218,7 +252,12 @@ export default function StatsDashboard() {
       <StatsKpiCards kpis={kpis} isLoading={isLoading} />
 
       {/* 3. Section des Statistiques par Grandeurs Physiques (Moyenne, Min, Max) */}
-      <StatsPhysicalMetricsCards metrics={physicalMetrics} isLoading={isLoading} />
+      <StatsPhysicalMetricsCards
+        metrics={physicalMetrics}
+        isLoading={isLoading || isPhysicalLoading}
+        selectedLocation={selectedPhysicalLocation}
+        onLocationChange={handlePhysicalLocationChange}
+      />
 
       {/* 4. Section Santé Matérielle : Top 5 Capteurs à Batterie Critique */}
       <StatsBatteryHealthTable batteryData={batteryCritical} isLoading={isLoading} />

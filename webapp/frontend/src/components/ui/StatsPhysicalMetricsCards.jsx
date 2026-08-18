@@ -1,6 +1,36 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { MapPin, CaretDown, Check, Buildings } from '@phosphor-icons/react';
 
-export default function StatsPhysicalMetricsCards({ metrics = [], isLoading = false }) {
+const SITES_LIST = [
+  { id: 'ALL', label: 'Tous les 4 Sites', city: 'Global', color: '#2563eb' },
+  { id: 'agadir_serre_1', label: 'Agadir - Serre 1', city: 'Agadir', color: '#06b6d4' },
+  { id: 'dakhla_station_emballage', label: 'Dakhla - Station Emballage', city: 'Dakhla', color: '#a855f7' },
+  { id: 'kenitra_station_filtrage', label: 'Kenitra - Station Filtrage', city: 'Kenitra', color: '#f59e0b' },
+  { id: 'tangier_med_hub', label: 'Tanger Med - Hub Logistique', city: 'Tanger Med', color: '#10b981' }
+];
+
+export default function StatsPhysicalMetricsCards({
+  metrics = [],
+  isLoading = false,
+  selectedLocation = 'ALL',
+  onLocationChange
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef(null);
+
+  // Fermeture automatique au clic en dehors
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const currentSite = SITES_LIST.find(s => s.id === selectedLocation) || SITES_LIST[0];
+
   if (isLoading) {
     return (
       <div style={{
@@ -37,11 +67,11 @@ export default function StatsPhysicalMetricsCards({ metrics = [], isLoading = fa
   }
 
   return (
-    <div style={{ marginBottom: '1.75rem' }}>
-      {/* Titre de la Section 2 : Statistiques des Grandeurs Physiques */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+    <div style={{ marginBottom: '1.75rem', position: 'relative' }}>
+      {/* Titre de la Section 2 avec Menu Deroulant Moderne de Selection de Site */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '12px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <div style={{ width: '4px', height: '18px', backgroundColor: '#2563eb', borderRadius: '2px' }} />
+          <div style={{ width: '4px', height: '18px', backgroundColor: currentSite.color, borderRadius: '2px', transition: 'background-color 0.3s ease' }} />
           <h2 style={{
             fontSize: '1rem',
             fontWeight: 800,
@@ -54,19 +84,133 @@ export default function StatsPhysicalMetricsCards({ metrics = [], isLoading = fa
             Statistiques des Grandeurs Physiques (Moyenne, Min, Max)
           </h2>
         </div>
-        <span style={{
-          fontSize: '0.75rem',
-          fontWeight: 700,
-          color: 'var(--azura-text-muted)',
-          backgroundColor: 'rgba(0, 0, 0, 0.04)',
-          padding: '3px 10px',
-          borderRadius: '9999px'
-        }}>
-          5 Types Metier
-        </span>
+
+        {/* Menu Deroulant Selecteur de Site Moderne */}
+        <div ref={dropdownRef} style={{ position: 'relative' }}>
+          <button
+            type="button"
+            onClick={() => setIsOpen(!isOpen)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '6px 14px',
+              borderRadius: '10px',
+              backgroundColor: 'var(--azura-card-bg)',
+              border: `1.5px solid ${isOpen ? currentSite.color : 'var(--azura-border)'}`,
+              boxShadow: isOpen ? `0 0 12px ${currentSite.color}30` : '0 2px 6px rgba(0, 0, 0, 0.04)',
+              cursor: 'pointer',
+              color: 'var(--azura-text)',
+              fontSize: '0.82rem',
+              fontWeight: 750,
+              fontFamily: "'Plus Jakarta Sans', sans-serif",
+              transition: 'all 0.2s ease',
+              outline: 'none'
+            }}
+          >
+            <span style={{
+              width: '8px',
+              height: '8px',
+              borderRadius: '50%',
+              backgroundColor: currentSite.color,
+              boxShadow: `0 0 6px ${currentSite.color}`
+            }} />
+            <MapPin size={15} weight="bold" style={{ color: currentSite.color }} />
+            <span>{currentSite.label}</span>
+            <CaretDown
+              size={13}
+              weight="bold"
+              style={{
+                color: 'var(--azura-text-muted)',
+                transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                transition: 'transform 0.2s ease'
+              }}
+            />
+          </button>
+
+          {/* Panneau Flottant du Menu Deroulant */}
+          {isOpen && (
+            <div style={{
+              position: 'absolute',
+              top: 'calc(100% + 6px)',
+              right: 0,
+              width: '260px',
+              backgroundColor: 'var(--azura-card-bg)',
+              border: '1px solid var(--azura-border)',
+              borderRadius: '12px',
+              boxShadow: '0 12px 32px rgba(0, 0, 0, 0.18)',
+              backdropFilter: 'blur(16px)',
+              zIndex: 100,
+              overflow: 'hidden',
+              padding: '6px'
+            }}>
+              <div style={{
+                padding: '6px 10px 4px 10px',
+                fontSize: '0.68rem',
+                fontWeight: 800,
+                color: 'var(--azura-text-muted)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px'
+              }}>
+                Filtrer par Emplacement AzurA
+              </div>
+
+              {SITES_LIST.map((site) => {
+                const isSelected = site.id === selectedLocation;
+                return (
+                  <button
+                    key={site.id}
+                    type="button"
+                    onClick={() => {
+                      if (onLocationChange) onLocationChange(site.id);
+                      setIsOpen(false);
+                    }}
+                    style={{
+                      width: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '8px 10px',
+                      borderRadius: '8px',
+                      backgroundColor: isSelected ? `${site.color}15` : 'transparent',
+                      border: isSelected ? `1px solid ${site.color}40` : '1px solid transparent',
+                      color: isSelected ? site.color : 'var(--azura-text)',
+                      fontSize: '0.8rem',
+                      fontWeight: isSelected ? 800 : 650,
+                      fontFamily: "'Plus Jakarta Sans', sans-serif",
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      transition: 'all 0.15s ease',
+                      outline: 'none',
+                      marginBottom: '2px'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isSelected) e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.03)';
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent';
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{
+                        width: '7px',
+                        height: '7px',
+                        borderRadius: '50%',
+                        backgroundColor: site.color,
+                        boxShadow: `0 0 6px ${site.color}`
+                      }} />
+                      <span>{site.label}</span>
+                    </div>
+                    {isSelected && <Check size={14} weight="bold" style={{ color: site.color }} />}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Grille Géométrique : Ligne 1 (3 cartes) + Ligne 2 (2 cartes centrées sous les espaces) */}
+      {/* Grille Geometrique : Ligne 1 (3 cartes) + Ligne 2 (2 cartes centrees sous les espaces) */}
       <div style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(6, 1fr)',
@@ -75,7 +219,7 @@ export default function StatsPhysicalMetricsCards({ metrics = [], isLoading = fa
       }}>
         {metrics.map((item, idx) => {
           const hasAlerts = item.total_alerts > 0;
-          // Positionnement précis en grille de 6 colonnes
+          // Positionnement precis en grille de 6 colonnes
           const colPlacement = idx === 0 ? '1 / span 2' :
                                idx === 1 ? '3 / span 2' :
                                idx === 2 ? '5 / span 2' :
@@ -102,7 +246,7 @@ export default function StatsPhysicalMetricsCards({ metrics = [], isLoading = fa
               onMouseEnter={(e) => {
                 e.currentTarget.style.transform = 'translateY(-2px)';
                 e.currentTarget.style.boxShadow = '0 6px 16px rgba(0, 0, 0, 0.06)';
-                e.currentTarget.style.borderColor = '#2563eb';
+                e.currentTarget.style.borderColor = currentSite.color;
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.transform = 'translateY(0)';
@@ -125,7 +269,7 @@ export default function StatsPhysicalMetricsCards({ metrics = [], isLoading = fa
                 </h3>
               </div>
 
-              {/* 2. Moyenne Globale au Centre */}
+              {/* 2. Moyenne Calculee au Centre (Globale ou par Site) */}
               <div style={{
                 display: 'flex',
                 flexDirection: 'column',
@@ -141,7 +285,7 @@ export default function StatsPhysicalMetricsCards({ metrics = [], isLoading = fa
                   letterSpacing: '0.5px',
                   fontFamily: "'Plus Jakarta Sans', sans-serif"
                 }}>
-                  Moyenne Globale
+                  {currentSite.id === 'ALL' ? 'Moyenne Globale' : `Moyenne : ${currentSite.city}`}
                 </span>
                 <div style={{
                   display: 'flex',
@@ -162,7 +306,7 @@ export default function StatsPhysicalMetricsCards({ metrics = [], isLoading = fa
                   <span style={{
                     fontSize: '1rem',
                     fontWeight: 800,
-                    color: '#2563eb',
+                    color: currentSite.color,
                     fontFamily: "'Plus Jakarta Sans', sans-serif"
                   }}>
                     {item.unit}
@@ -177,7 +321,7 @@ export default function StatsPhysicalMetricsCards({ metrics = [], isLoading = fa
                 gap: '8px',
                 width: '100%'
               }}>
-                {/* Min en Bleu */}
+                {/* Min */}
                 <div style={{
                   padding: '6px 8px',
                   borderRadius: '8px',
@@ -206,7 +350,7 @@ export default function StatsPhysicalMetricsCards({ metrics = [], isLoading = fa
                   </span>
                 </div>
 
-                {/* Max en Rouge */}
+                {/* Max */}
                 <div style={{
                   padding: '6px 8px',
                   borderRadius: '8px',
@@ -280,3 +424,4 @@ export default function StatsPhysicalMetricsCards({ metrics = [], isLoading = fa
     </div>
   );
 }
+

@@ -122,11 +122,12 @@ def get_filtered_raw(
 def get_physical_metrics(
     start_date: str = Query(default=None),
     end_date: str = Query(default=None),
-    device_id: str = Query(default="ALL")
+    device_id: str = Query(default="ALL"),
+    location: str = Query(default="ALL")
 ):
-    """Retourne les moyennes, min, max et alertes par type physique depuis MongoDB."""
+    """Retourne les moyennes, min, max et alertes par type physique et par emplacement depuis MongoDB."""
     try:
-        return mongo_service.get_physical_metrics_stats(start_date=start_date, end_date=end_date, device_id=device_id)
+        return mongo_service.get_physical_metrics_stats(start_date=start_date, end_date=end_date, device_id=device_id, location=location)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur MongoDB: {str(e)}")
 
