@@ -43,12 +43,10 @@ class IoTSimulator:
             print(f"[-] Kafka n'est pas disponible en local, mode standalone (print) activé. (Détail: {e})")
 
     def _setup_fault_scenarios(self):
-        """Configure le scénario temporel exact :
-        - 4 capteurs choisis au hasard parmi les 20.
-        - t = 0s à 60s (0-1 min) : 0 alerte dans Kafka iot-alerts.
-        - t = 60s : Déclenchement simultané des 4 pannes (2 temporaires, 2 permanentes).
-        - t = 180s (3 min) : Guérison immédiate des 2 pannes temporaires.
-        - t > 180s : Seules les 2 pannes permanentes continuent d'émettre des alertes.
+        """Configure les scénarios de pannes :
+        1. 4 capteurs avec pannes physiques de grandeur (2 temporaires 60s->180s, 2 permanentes > 60s).
+        2. 1 capteur parmi les 16 restants qui tombe en PANNE TOTALE (Silence Radio) à t = 120s (2 minutes).
+        3. 1 capteur parmi les restants qui subit une BATTERIE FAIBLE (< 20%) à t = 65s.
         """
         all_ids = [s["id"] for s in self.active_sensors]
         selected_fault_ids = random.sample(all_ids, 4)
@@ -65,12 +63,26 @@ class IoTSimulator:
                 "direction": random.choice([1, -1])              # 1 = surchauffe/surpression, -1 = sous-pression/gel
             }
         
+        # Sélection parmi les 16 capteurs normaux
+        remaining_ids = [s_id for s_id in all_ids if s_id not in selected_fault_ids]
+        
+        # 1. Capteur en Panne Totale / Silence Radio après 2 minutes (120s)
+        self.silent_sensor_id = random.choice(remaining_ids)
+        self.silent_start_delay = 120.0  # 2 minutes de fonctionnement normal
+        
+        # 2. Capteur pour tester l'alerte Batterie Faible (< 20%)
+        other_remaining_ids = [s_id for s_id in remaining_ids if s_id != self.silent_sensor_id]
+        self.battery_fault_sensor_id = random.choice(other_remaining_ids)
+        self.battery_fault_start_delay = 65.0 # Déclenchement à 65s
+        
         print("\n" + "="*75)
-        print("  [SCÉNARIO TEMPOREL CONFIGURÉ (Strict 1 à 3 min)]")
-        print("  - t = 0s à 60s (0-1 min) : Tous les 20 capteurs sont 100% NORMAUX (0 alerte)")
+        print("  [SCENARIOS DE PANNES CONFIGURES]")
+        print("  - t = 0s a 60s (0-1 min) : Tous les 20 capteurs sont 100% NORMAUX (0 alerte)")
         for s_id, sc in self.fault_scenarios.items():
-            kind = "TEMPORAIRE (guérie à t = 180s)" if sc["is_temporary"] else "PERMANENTE (active indéfiniment)"
-            print(f"  - Capteur {s_id} : Panne {kind} déclenchée à t = 60s")
+            kind = "TEMPORAIRE (guerie a t = 180s)" if sc["is_temporary"] else "PERMANENTE (active indefiniment)"
+            print(f"  - Capteur {s_id} : Panne Physique {kind} declenchee a t = 60s")
+        print(f"  - Capteur {self.silent_sensor_id} : SILENCE RADIO (Panne Totale / 0 emission) a t >= 120s (2 min)")
+        print(f"  - Capteur {self.battery_fault_sensor_id} : BATTERIE FAIBLE (< 20%) declenchee a t >= 65s")
         print("="*75 + "\n")
 
     def _initialize_sensor_states(self):
@@ -172,7 +184,7 @@ class IoTSimulator:
             sys.stdout.flush()
 
     def run(self):
-        print(f"--- Démarrage du Simulateur IoT (Taux d'anomalies: {self.anomaly_rate * 100}%) ---")
+        print(f"--- Démarrage du Simulateur IoT (20 Capteurs Actifs) ---")
         last_sent_time = {sensor["id"]: 0.0 for sensor in self.active_sensors}
         
         # Taux de décharge réaliste par type de grandeur physique
@@ -187,6 +199,8 @@ class IoTSimulator:
         try:
             while True:
                 current_now = time.time()
+                elapsed = current_now - self.start_time
+
                 for sensor in self.active_sensors:
                     sensor_id = sensor["id"]
                     sensor_type = sensor["type"]
@@ -196,10 +210,21 @@ class IoTSimulator:
                     lng = sensor["longitude"]
                     profile = self.profiles[sensor_type]
                     
+                    # ── CAS 1 : PANNE TOTALE / SILENCE RADIO APRÈS 2 MINUTES (120s) ──
+                    if sensor_id == self.silent_sensor_id and elapsed >= self.silent_start_delay:
+                        # Ce capteur ne transmet PLUS AUCUNE information vers Kafka
+                        continue
+
                     if current_now - last_sent_time[sensor_id] >= interval:
                         state = self.states[sensor_id]
-                        rate = TYPE_DISCHARGE_RATES.get(sensor_type, 0.002)
-                        state["battery_level"] = max(2.0, state["battery_level"] - rate)
+                        
+                        # ── CAS 2 : TEST BATTERIE FAIBLE (< 20%) APRÈS 65s ──
+                        if sensor_id == self.battery_fault_sensor_id and elapsed >= self.battery_fault_start_delay:
+                            # Décharge brutale sous le seuil d'alerte pour déclencher Spark (< 20.0%)
+                            state["battery_level"] = max(5.0, state["battery_level"] - 0.4) if state["battery_level"] > 14.5 else 14.2
+                        else:
+                            rate = TYPE_DISCHARGE_RATES.get(sensor_type, 0.002)
+                            state["battery_level"] = max(2.0, state["battery_level"] - rate)
                         
                         # Génération de la valeur physique
                         val = self.generate_reading(sensor_id, sensor_type)

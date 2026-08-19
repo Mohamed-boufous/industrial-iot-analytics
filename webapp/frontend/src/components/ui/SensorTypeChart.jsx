@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo } from "react";
-import { ArrowUp, ArrowDown, CheckCircle, Radio } from "@phosphor-icons/react";
+import { ArrowUp, ArrowDown, CheckCircle, Radio, WifiSlash } from "@phosphor-icons/react";
 
 /**
  * Palette de 4 couleurs distinctes et haute visibilite pour differencier les 4 capteurs (1 par site).
@@ -17,7 +17,7 @@ const SENSOR_LINE_COLORS = [
  * - Titre et Plage nominale centrés en haut.
  * - Pointage 2D de haute précision interactif.
  * - Axe X Temporel Continu (HH:mm:ss) avec défilement fluide.
- * - Valeurs réelles des 3 capteurs affichées au centre du bas de diagramme.
+ * - Valeurs réelles des 4 capteurs affichées au centre du bas de diagramme.
  * - Aucune perte d'état lors du refresh grâce au tampon d'historique backend.
  */
 export function SensorTypeChart({
@@ -106,11 +106,21 @@ export function SensorTypeChart({
       const palette = SENSOR_LINE_COLORS[sIdx % SENSOR_LINE_COLORS.length];
       const allSensorPoints = sensor.points || [];
       
-      // Récupération de la dernière valeur connue du capteur
+      // Récupération de la dernière valeur connue du capteur et de son horodatage
       const lastKnown = allSensorPoints.length > 0 ? allSensorPoints[allSensorPoints.length - 1] : null;
       const latestValue = lastKnown ? lastKnown.value : null;
+      const lastTime = lastKnown ? (typeof lastKnown.time === "number" ? lastKnown.time : new Date(lastKnown.time).getTime()) : 0;
+
+      // Détection du Silence Radio / Déconnexion (> 9s sans nouvelle mesure)
+      const isOffline = lastTime > 0 && (now - lastTime > 9000);
+      const isLowBattery = sensor.status === "LOW_BATTERY" || (sensor.battery_level !== undefined && sensor.battery_level < 20.0);
+
       let latestStatus = "NORMAL";
-      if (latestValue !== null) {
+      if (isOffline) {
+        latestStatus = "OFFLINE";
+      } else if (isLowBattery) {
+        latestStatus = "LOW_BATTERY";
+      } else if (latestValue !== null) {
         if (latestValue > normMax) latestStatus = "HIGH";
         else if (latestValue < normMin) latestStatus = "LOW";
       }
@@ -573,8 +583,28 @@ export function SensorTypeChart({
       }}>
         {processedSeries.map((sp, idx) => {
           const hasData = sp.latestValue !== null;
-          const statusColor = sp.latestStatus === "HIGH" ? "#ef4444" : sp.latestStatus === "LOW" ? "#0284c7" : "#22c55e";
-          const statusText = sp.latestStatus === "HIGH" ? "Haut" : sp.latestStatus === "LOW" ? "Bas" : "Normal";
+          const isOffline = sp.latestStatus === "OFFLINE";
+          const isBattery = sp.latestStatus === "LOW_BATTERY";
+          const isHigh = sp.latestStatus === "HIGH";
+          const isLow = sp.latestStatus === "LOW";
+
+          let statusColor = "#22c55e";
+          let statusText = "Normal";
+
+          if (isOffline) {
+            statusColor = "#ef4444";
+            statusText = "Hors Ligne";
+          } else if (isBattery) {
+            statusColor = "#f59e0b";
+            statusText = "Batterie";
+          } else if (isHigh) {
+            statusColor = "#ef4444";
+            statusText = "Haut";
+          } else if (isLow) {
+            statusColor = "#0284c7";
+            statusText = "Bas";
+          }
+
           const isHoveredSeries = hoveredData && hoveredData.deviceId === sp.sensor.id;
 
           return (
@@ -608,7 +638,7 @@ export function SensorTypeChart({
                 <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
                   <span style={{
                     fontWeight: 800,
-                    color: statusColor,
+                    color: isOffline ? "#ef4444" : isBattery ? "var(--azura-text)" : statusColor,
                     fontSize: "0.875rem",
                     fontFamily: "'JetBrains Mono', monospace"
                   }}>
@@ -620,8 +650,12 @@ export function SensorTypeChart({
                     color: statusColor,
                     backgroundColor: `${statusColor}18`,
                     padding: "2px 6px",
-                    borderRadius: "4px"
+                    borderRadius: "4px",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "3px"
                   }}>
+                    {isOffline && <WifiSlash size={12} weight="bold" />}
                     {statusText}
                   </span>
                 </div>

@@ -251,6 +251,8 @@ export default function SensorsDashboard() {
             type: item.device_type || (existing && existing.type),
             loc: item.location || (existing && existing.loc) || sId,
             unit: item.unit || (existing && existing.unit),
+            status: item.status || (existing && existing.status),
+            battery_level: item.battery_level ?? (existing && existing.battery_level),
             latestValue: Number(item.value),
             latestTimestamp: pointTime,
             points: updatedPoints

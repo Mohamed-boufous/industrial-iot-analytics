@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { ShieldCheck, WarningOctagon, Waveform, Radio, ArrowUp, ArrowDown } from "@phosphor-icons/react";
+import { ShieldCheck, WarningOctagon, Waveform, ArrowUp, ArrowDown, WifiSlash } from "@phosphor-icons/react";
 import { useWebSocket } from "../../hooks/useWebSocket";
 import { RollingTime } from "./RollingTime";
 import { AlertsKafkaTable } from "./AlertsKafkaTable";
-import { MetalButton } from "./metal-button";
 
 // Seuils industriels nominaux conformes aux standards d'exploitation AzurA
 const SENSOR_THRESHOLDS = {
@@ -13,6 +12,37 @@ const SENSOR_THRESHOLDS = {
   humidite:     { min: 30.0,  max: 70.0,  unit: "%",    label: "Humidite" },
   consommation: { min: 100.0, max: 500.0, unit: "kW",   label: "Puissance" },
 };
+
+// Référentiel des 20 capteurs industriels déployés sur les 4 zones AzurA
+const ALL_SENSORS_METADATA = [
+  // ZONE 1 : Agadir
+  { id: "sensor_temp_001", type: "temperature",  location: "agadir_serre_1" },
+  { id: "sensor_vib_001",  type: "vibration",    location: "agadir_serre_1" },
+  { id: "sensor_pres_001", type: "pression",     location: "agadir_serre_1" },
+  { id: "sensor_hum_001",  type: "humidite",     location: "agadir_serre_1" },
+  { id: "sensor_pow_001",  type: "consommation", location: "agadir_serre_1" },
+
+  // ZONE 2 : Dakhla
+  { id: "sensor_temp_002", type: "temperature",  location: "dakhla_station_emballage" },
+  { id: "sensor_vib_002",  type: "vibration",    location: "dakhla_station_emballage" },
+  { id: "sensor_pres_002", type: "pression",     location: "dakhla_station_emballage" },
+  { id: "sensor_hum_002",  type: "humidite",     location: "dakhla_station_emballage" },
+  { id: "sensor_pow_002",  type: "consommation", location: "dakhla_station_emballage" },
+
+  // ZONE 3 : Kenitra
+  { id: "sensor_temp_003", type: "temperature",  location: "kenitra_station_filtrage" },
+  { id: "sensor_vib_003",  type: "vibration",    location: "kenitra_station_filtrage" },
+  { id: "sensor_pres_003", type: "pression",     location: "kenitra_station_filtrage" },
+  { id: "sensor_hum_003",  type: "humidite",     location: "kenitra_station_filtrage" },
+  { id: "sensor_pow_003",  type: "consommation", location: "kenitra_station_filtrage" },
+
+  // ZONE 4 : Tanger Med
+  { id: "sensor_temp_004", type: "temperature",  location: "tangier_med_hub" },
+  { id: "sensor_vib_004",  type: "vibration",    location: "tangier_med_hub" },
+  { id: "sensor_pres_004", type: "pression",     location: "tangier_med_hub" },
+  { id: "sensor_hum_004",  type: "humidite",     location: "tangier_med_hub" },
+  { id: "sensor_pow_004",  type: "consommation", location: "tangier_med_hub" },
+];
 
 // Diagnostics explicites orientes metier/operateur
 const SENSOR_DIAGNOSTICS = {
@@ -43,6 +73,20 @@ const SENSOR_ID_COLORS = [
   "#e879f9", // 7. Fuchsia Lumineux
   "#fdba74", // 8. Peche Electrique
 ];
+
+/**
+ * Normalise et convertit de manière sécurisée tout format d'horodatage en millisecondes epoch
+ */
+function parseTimestamp(ts) {
+  if (!ts) return 0;
+  if (typeof ts === "number") return ts;
+  if (typeof ts === "string") {
+    const normalized = ts.includes(" ") ? ts.replace(" ", "T") : ts;
+    const ms = new Date(normalized).getTime();
+    return isNaN(ms) ? 0 : ms;
+  }
+  return 0;
+}
 
 /**
  * Calcule l'indice de gravite (Severity & Deviation Index) en % de depassement au-dela du seuil critique dynamique
@@ -86,9 +130,10 @@ function calculateSeverityIndex(value, deviceType, dynamicThresholds = null) {
 export function RealTimeAnalytics() {
   const [sensorSeries, setSensorSeries] = useState({});
   const [rawAlerts, setRawAlerts] = useState([]);
+  const [latestSensorsState, setLatestSensorsState] = useState({});
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [dynamicThresholds, setDynamicThresholds] = useState(null);
-  // Horodatage reel courant pour l'axe X glissant (mise a jour chaque 1s)
+  // Horodatage reel courant pour l'axe X glissant et le heartbeat (mise a jour chaque 1s)
   const [currentTime, setCurrentTime] = useState(Date.now());
   const [hoveredData, setHoveredData] = useState(null);
   const svgRef = useRef(null);
@@ -114,7 +159,7 @@ export function RealTimeAnalytics() {
     return () => clearInterval(interval);
   }, []);
 
-  // Horloge temps reel continue : fait avancer l'axe X chaque seconde
+  // Horloge temps reel continue : fait avancer l'axe X et déclenche le contrôle de heartbeat chaque seconde
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentTime(Date.now());
@@ -187,8 +232,8 @@ export function RealTimeAnalytics() {
         const sevInfo = calculateSeverityIndex(val, devType, dynamicThresholds);
         const diagnostic = SENSOR_DIAGNOSTICS[status] || "Derive Operationnelle";
 
-        // Conversion horodatage
-        const timeMs = alert.timestamp ? new Date(alert.timestamp).getTime() : now;
+        // Conversion horodatage sécurisée
+        const timeMs = parseTimestamp(alert.timestamp) || now;
 
         if (!updated[devId]) {
           updated[devId] = {
@@ -250,6 +295,38 @@ export function RealTimeAnalytics() {
           processAlertsBatch(data.alerts);
         }
       })
+      .catch(() => {});
+
+    fetch("/api/stats/sensors-state")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data) {
+          const stateObj = {};
+          if (data.history && typeof data.history === "object") {
+            Object.entries(data.history).forEach(([sId, pts]) => {
+              if (Array.isArray(pts) && pts.length > 0) {
+                const last = pts[pts.length - 1];
+                stateObj[sId] = {
+                  ...last,
+                  latestTimestamp: parseTimestamp(last.timestamp)
+                };
+              }
+            });
+          }
+          if (data.latest) {
+            const list = Array.isArray(data.latest) ? data.latest : Object.values(data.latest);
+            list.forEach((item) => {
+              if (item && item.device_id) {
+                stateObj[item.device_id] = {
+                  ...item,
+                  latestTimestamp: parseTimestamp(item.timestamp)
+                };
+              }
+            });
+          }
+          setLatestSensorsState((prev) => ({ ...prev, ...stateObj }));
+        }
+      })
       .catch(() => {})
       .finally(() => {
         if (isManual) {
@@ -260,11 +337,11 @@ export function RealTimeAnalytics() {
 
   useEffect(() => {
     syncLatestAlerts(false);
-    const interval = setInterval(() => syncLatestAlerts(false), 3000);
+    const interval = setInterval(() => syncLatestAlerts(false), 2500);
     return () => clearInterval(interval);
   }, [syncLatestAlerts]);
 
-  // Reception synchrone en direct par flux continu WebSocket (zero perte de message)
+  // Reception synchrone en direct par flux continu WebSocket des alertes
   const handleAlertMessage = useCallback((msg) => {
     if (!msg) return;
     if (msg.type === "INITIAL_ALERTS_HISTORY" && Array.isArray(msg.data)) {
@@ -276,6 +353,50 @@ export function RealTimeAnalytics() {
 
   const { isConnected } = useWebSocket("/ws/alerts", handleAlertMessage);
 
+  // Reception synchrone en direct par flux continu WebSocket de la telemetrie des 20 capteurs
+  const handleSensorMessage = useCallback((msg) => {
+    if (!msg) return;
+    if (msg.type === "INITIAL_SENSORS_STATE" || msg.type === "INITIAL_SENSORS_HISTORY") {
+      const stateObj = {};
+      if (msg.history && typeof msg.history === "object") {
+        Object.entries(msg.history).forEach(([sId, pts]) => {
+          if (Array.isArray(pts) && pts.length > 0) {
+            const last = pts[pts.length - 1];
+            stateObj[sId] = {
+              ...last,
+              latestTimestamp: parseTimestamp(last.timestamp)
+            };
+          }
+        });
+      }
+      if (msg.data) {
+        const list = Array.isArray(msg.data) ? msg.data : Object.values(msg.data);
+        list.forEach((item) => {
+          if (item && item.device_id) {
+            stateObj[item.device_id] = {
+              ...item,
+              latestTimestamp: parseTimestamp(item.timestamp)
+            };
+          }
+        });
+      }
+      setLatestSensorsState((prev) => ({ ...prev, ...stateObj }));
+    } else if (msg.type === "SENSOR_UPDATE" || msg.type === "TELEMETRY_UPDATE") {
+      const d = msg.data;
+      if (d && d.device_id) {
+        setLatestSensorsState((prev) => ({
+          ...prev,
+          [d.device_id]: {
+            ...d,
+            latestTimestamp: Date.now()
+          }
+        }));
+      }
+    }
+  }, []);
+
+  useWebSocket("/ws/sensors", handleSensorMessage);
+
   // Fenetre glissante de temps reel : 2 minutes visibles a l'ecran
   const windowDurationMs = 120000;
   const minTime = currentTime - windowDurationMs;
@@ -283,19 +404,19 @@ export function RealTimeAnalytics() {
   const timeRange = maxTime - minTime;
 
   // Capteurs actifs ayant emis une alerte dans les 45 dernieres secondes
-  // et dont le dernier point est REELLEMENT une anomalie par rapport aux seuils dynamiques actuels
+  // et dont le dernier point est REELLEMENT une anomalie de depassement physique (HIGH ou LOW) par rapport aux seuils actuels
   const rawActive = useMemo(() => {
     const list = Object.values(sensorSeries).filter((s) => {
       const recentPoints = (s.points || []).filter((p) => p.time >= currentTime - 45000);
       if (recentPoints.length === 0) return false;
       const latestPt = recentPoints[recentPoints.length - 1];
-      return latestPt && latestPt.severity > 0 && latestPt.direction !== "NORMAL";
+      return latestPt && latestPt.severity > 0 && (latestPt.direction === "HIGH" || latestPt.direction === "LOW");
     });
     list.sort((a, b) => (a.device_id || "").localeCompare(b.device_id || ""));
     return list;
   }, [sensorSeries, currentTime]);
 
-  // Attribution d'une couleur UNIQUE garantie sans collision a chaque capteur actif
+  // Attribution d'une couleur UNIQUE garantie sans collision a chaque capteur actif sur le graphique
   const activeSensors = useMemo(() => {
     return rawActive.map((sensor, idx) => {
       const assignedColor = SENSOR_ID_COLORS[idx % SENSOR_ID_COLORS.length];
@@ -312,14 +433,100 @@ export function RealTimeAnalytics() {
 
   const activeCount = activeSensors.length;
 
-  // Liste des alertes filtrees dynamiquement par rapport aux seuils actuels
+  // Cartes d'équipements en anomalie globale : Dérives Physiques (HIGH/LOW) + Batterie Faible + Silence Radio (Perte de connexion)
+  const allProblematicCards = useMemo(() => {
+    const cards = [];
+    const seenDevices = new Set();
+
+    // 1. Capteurs en Dérive Physique de Valeur (HIGH / LOW)
+    activeSensors.forEach((series) => {
+      seenDevices.add(series.device_id);
+      const lastPt = series.points[series.points.length - 1];
+      const isHigh = series.direction === "HIGH";
+      cards.push({
+        device_id: series.device_id,
+        device_type: SENSOR_THRESHOLDS[series.device_type] ? SENSOR_THRESHOLDS[series.device_type].label : series.device_type,
+        location: series.location,
+        diagnostic: series.diagnostic || (isHigh ? "Depassement de Seuil Haut" : "Chute de Seuil Bas"),
+        issueType: "PHYSICAL",
+        isHigh: isHigh,
+        color: series.uniqueColor,
+        displayValue: `${lastPt ? lastPt.value : 0}`,
+        unit: series.unit,
+        badgeText: isHigh ? `+${lastPt ? lastPt.severity.toFixed(0) : 0}%` : `-${lastPt ? lastPt.severity.toFixed(0) : 0}%`,
+        badgeColor: isHigh ? "#ef4444" : "#06b6d4",
+        badgeBg: isHigh ? "rgba(239, 68, 68, 0.1)" : "rgba(6, 182, 212, 0.1)",
+        barPercent: Math.min(100, Math.max(15, (lastPt ? lastPt.severity : 0) * 1.5))
+      });
+    });
+
+    // 2. Capteurs en Perte de Connexion / Silence Radio (> 9s) ou Batterie Faible (< 20%)
+    ALL_SENSORS_METADATA.forEach((meta) => {
+      const sId = meta.id;
+      if (seenDevices.has(sId)) return;
+
+      const liveSensor = latestSensorsState[sId];
+      if (!liveSensor) return;
+
+      const timeMs = liveSensor.latestTimestamp || parseTimestamp(liveSensor.timestamp);
+      const timeSince = currentTime - timeMs;
+      const isOffline = timeMs > 0 && timeSince > 9000;
+      const bLevel = liveSensor.battery_level !== undefined ? Number(liveSensor.battery_level) : 100;
+      const isLowBattery = liveSensor.status === "LOW_BATTERY" || bLevel < 20.0;
+
+      if (isOffline) {
+        seenDevices.add(sId);
+        const devType = meta.type || liveSensor.device_type || "temperature";
+        cards.push({
+          device_id: sId,
+          device_type: SENSOR_THRESHOLDS[devType]?.label || devType,
+          location: meta.location || liveSensor.location || "Site AzurA",
+          diagnostic: "Silence Radio / Hors Ligne",
+          issueType: "OFFLINE",
+          color: "#ef4444",
+          displayValue: "Hors Ligne",
+          unit: "",
+          badgeText: "SIGNAL PERDU",
+          badgeColor: "#ef4444",
+          badgeBg: "rgba(239, 68, 68, 0.1)",
+          barPercent: 100
+        });
+      } else if (isLowBattery) {
+        seenDevices.add(sId);
+        const devType = meta.type || liveSensor.device_type || "temperature";
+        cards.push({
+          device_id: sId,
+          device_type: SENSOR_THRESHOLDS[devType]?.label || devType,
+          location: meta.location || liveSensor.location || "Site AzurA",
+          diagnostic: "Niveau Batterie Critique (< 20%)",
+          issueType: "BATTERY",
+          color: "#f59e0b",
+          displayValue: `${bLevel.toFixed(1)}`,
+          unit: "%",
+          badgeText: "CRITIQUE",
+          badgeColor: "#f59e0b",
+          badgeBg: "rgba(245, 158, 11, 0.12)",
+          barPercent: Math.max(10, ((20 - bLevel) / 20) * 100)
+        });
+      }
+    });
+
+    return cards;
+  }, [activeSensors, latestSensorsState, currentTime]);
+
+  // Liste des alertes physiques UNIQUEMENT (HIGH et LOW) pour le Journal des Incidents
   const activeAlertsList = useMemo(() => {
-    if (!dynamicThresholds) return rawAlerts;
     return rawAlerts.filter((al) => {
+      const statusStr = String(al.status || "").toUpperCase();
+      const directionStr = String(al.direction || "").toUpperCase();
+      if (statusStr === "LOW_BATTERY" || directionStr === "LOW_BATTERY" || (al.battery_level !== undefined && al.battery_level < 20.0)) {
+        return false;
+      }
+      if (!dynamicThresholds) return true;
       const devType = al.device_type || al.metric;
       const val = typeof al.value === "number" ? al.value : typeof al.current_value === "number" ? al.current_value : 0;
       const sevInfo = calculateSeverityIndex(val, devType, dynamicThresholds);
-      return sevInfo.direction !== "NORMAL";
+      return sevInfo.direction === "HIGH" || sevInfo.direction === "LOW";
     });
   }, [rawAlerts, dynamicThresholds]);
 
@@ -412,7 +619,6 @@ export function RealTimeAnalytics() {
             borderRadius: "9999px",
             backgroundColor: "rgba(255, 255, 255, 0.02)",
           }}>
-            {/* Icone Vintage & Moderne (Waveform Oscilloscope Telemetrique) */}
             <Waveform size={24} weight="bold" style={{ color: "var(--azura-accent-red)", filter: "drop-shadow(0 0 8px rgba(239, 68, 68, 0.45))" }} />
             <h2 style={{
               fontSize: "1.25rem",
@@ -431,71 +637,56 @@ export function RealTimeAnalytics() {
         <div style={{ position: "relative", backgroundColor: "rgba(0,0,0,0.02)", borderRadius: "14px", padding: "16px 12px" }}>
           <svg
             ref={svgRef}
-            width="100%"
-            height={height}
             viewBox={`0 0 ${width} ${height}`}
+            style={{ width: "100%", height: "auto", display: "block", overflow: "hidden", cursor: "crosshair" }}
             onMouseMove={handleMouseMove}
             onMouseLeave={() => setHoveredData(null)}
-            style={{ overflow: "visible", cursor: "crosshair" }}
           >
             <defs>
-              {/* Degrade vertical d'intensite */}
-              <linearGradient id="alertZoneGrad" x1="0%" y1="100%" x2="0%" y2="0%">
-                <stop offset="0%" stopColor="#22c55e" stopOpacity="0.02" />
-                <stop offset="50%" stopColor="#f59e0b" stopOpacity="0.06" />
-                <stop offset="100%" stopColor="#ef4444" stopOpacity="0.12" />
+              <linearGradient id="gridGlow" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#ef4444" stopOpacity="0.12" />
+                <stop offset="40%" stopColor="#ef4444" stopOpacity="0.04" />
+                <stop offset="100%" stopColor="#ef4444" stopOpacity="0.0" />
               </linearGradient>
-
-              {/* MASQUE DE DECOUPE STRICT : Empêche tout debordement sur l'axe Y a gauche */}
               <clipPath id="chartPlotAreaClip">
-                <rect
-                  x={padding.left}
-                  y={padding.top}
-                  width={width - padding.left - padding.right}
-                  height={height - padding.top - padding.bottom}
-                />
+                <rect x={padding.left} y={padding.top} width={width - padding.left - padding.right} height={height - padding.top - padding.bottom} />
               </clipPath>
             </defs>
 
-            {/* Zone d'Arriere-Plan */}
+            {/* Zone d'Alerte Gradient */}
             <rect
               x={padding.left}
               y={padding.top}
               width={width - padding.left - padding.right}
               height={height - padding.top - padding.bottom}
-              fill="url(#alertZoneGrad)"
-              rx="6"
+              fill="url(#gridGlow)"
+              rx="8"
             />
 
-            {/* Lignes de Seuils et Graduations Y */}
+            {/* Lignes Horizontales Y (Graduations de Gravite) */}
             {yTicks.map((tick, i) => {
-              const yPos = getY(tick.val);
+              const y = getY(tick.val);
               const isBase = tick.val === 0;
-              const strokeColor = isBase ? "#ef4444" : "var(--azura-border)";
-              const strokeDash = isBase ? "none" : "4 4";
-              const strokeWidth = isBase ? "2" : "1";
-              const opacity = isBase ? "0.9" : "0.35";
-
               return (
-                <g key={i}>
+                <g key={`ytick-${i}`}>
                   <line
                     x1={padding.left}
-                    y1={yPos}
+                    y1={y}
                     x2={width - padding.right}
-                    y2={yPos}
-                    stroke={strokeColor}
-                    strokeDasharray={strokeDash}
-                    strokeWidth={strokeWidth}
-                    opacity={opacity}
+                    y2={y}
+                    stroke={isBase ? "#ef4444" : "var(--azura-border)"}
+                    strokeWidth={isBase ? "2" : "1"}
+                    strokeDasharray={isBase ? "none" : "4 4"}
+                    opacity={isBase ? "0.85" : "0.5"}
                   />
                   <text
                     x={padding.left - 12}
-                    y={yPos + 4}
+                    y={y + 4}
                     fill={isBase ? "#ef4444" : "var(--azura-text-muted)"}
                     fontSize="11"
                     fontWeight={isBase ? "800" : "600"}
                     textAnchor="end"
-                    fontFamily="monospace"
+                    fontFamily="'JetBrains Mono', monospace"
                   >
                     {tick.label}
                   </text>
@@ -503,16 +694,18 @@ export function RealTimeAnalytics() {
               );
             })}
 
-            {/* Axe X des Abscisses : Horodatages Temps Reel Continu (HH:mm:ss) */}
-            {timeTicks.map((tick, idx) => (
-              <g key={idx}>
+            {/* Lignes Verticales X (Temps Reel Dynamique) */}
+            {timeTicks.map((tick, i) => (
+              <g key={`xtick-${i}`}>
                 <line
                   x1={tick.x}
-                  y1={height - padding.bottom}
+                  y1={padding.top}
                   x2={tick.x}
-                  y2={height - padding.bottom + 6}
+                  y2={height - padding.bottom}
                   stroke="var(--azura-border)"
-                  strokeWidth="1.5"
+                  strokeWidth="1"
+                  strokeDasharray="2 4"
+                  opacity="0.4"
                 />
                 <text
                   x={tick.x}
@@ -521,14 +714,14 @@ export function RealTimeAnalytics() {
                   fontSize="11"
                   fontWeight="600"
                   textAnchor="middle"
-                  fontFamily="monospace"
+                  fontFamily="'JetBrains Mono', monospace"
                 >
                   {tick.label}
                 </text>
               </g>
             ))}
 
-            {/* Ligne de base Axe X */}
+            {/* Axe Horizontal de Base (Seuil Critique 0%) */}
             <line
               x1={padding.left}
               y1={height - padding.bottom}
@@ -541,11 +734,8 @@ export function RealTimeAnalytics() {
             {/* Trace des courbes de derive (Clip Path Strict) */}
             {activeCount === 0 ? (
               <g transform={`translate(${padding.left + (width - padding.left - padding.right) / 2}, ${padding.top + (height - padding.top - padding.bottom) / 2})`}>
-                {/* Pastille Lumineuse Verte avec Halo */}
                 <circle cx="-160" cy="0" r="5" fill="#22c55e" />
                 <circle cx="-160" cy="0" r="9" fill="#22c55e" opacity="0.25" />
-                
-                {/* Texte Centre Proprement Sans Fond Vert */}
                 <text
                   x="-142"
                   y="4"
@@ -608,12 +798,11 @@ export function RealTimeAnalytics() {
 
               const lastX = Math.max(padding.left, Math.min(width - padding.right, getX(lastPt.time)));
               const lastY = getY(lastPt.severity);
-              const headColor = series.uniqueColor; // Couleur garantie 100% unique parmi les capteurs actifs
+              const headColor = series.uniqueColor;
               const isThisHovered = hoveredData && hoveredData.deviceId === series.device_id;
 
               return (
                 <g key={`head-${series.device_id}`}>
-                  {/* Halo externe */}
                   <circle
                     cx={lastX}
                     cy={lastY}
@@ -622,7 +811,6 @@ export function RealTimeAnalytics() {
                     opacity={isThisHovered ? 0.45 : 0.25}
                     style={{ filter: `drop-shadow(0 0 8px ${headColor})` }}
                   />
-                  {/* Pastille de tête */}
                   <circle
                     cx={lastX}
                     cy={lastY}
@@ -661,7 +849,7 @@ export function RealTimeAnalytics() {
             )}
           </svg>
 
-          {/* Infobulle de Survol Epuree et Professionnelle (Sans icones, Design Telemetrique Compact) */}
+          {/* Infobulle de Survol */}
           {hoveredData && (
             <div
               style={{
@@ -679,7 +867,6 @@ export function RealTimeAnalytics() {
                 minWidth: "160px"
               }}
             >
-              {/* Ligne 1 : Pastille + Device ID + Tag Direction */}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                   <div style={{
@@ -706,12 +893,10 @@ export function RealTimeAnalytics() {
                 </span>
               </div>
 
-              {/* Ligne 2 : Valeur Mesuree */}
               <div style={{ fontSize: "1.15rem", fontWeight: 800, color: hoveredData.uniqueColor, lineHeight: 1.1 }}>
                 {hoveredData.value} {hoveredData.unit}
               </div>
 
-              {/* Ligne 3 : Metriques Resumees & Horodatage */}
               <div style={{
                 display: "flex",
                 justifyContent: "space-between",
@@ -742,9 +927,8 @@ export function RealTimeAnalytics() {
           flexWrap: "wrap",
           gap: "12px"
         }}>
-          {/* Groupe de Badges Statut Telemetriques 3D Compacts (Non-cliquables) */}
           <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-            {/* 1. Badge 3D Statut Flux Continu */}
+            {/* 1. Badge Statut Flux Continu */}
             <div
               style={{
                 display: "inline-flex",
@@ -754,12 +938,8 @@ export function RealTimeAnalytics() {
                 borderRadius: "12px",
                 backgroundColor: isConnected ? "rgba(34, 197, 94, 0.09)" : "rgba(239, 68, 68, 0.09)",
                 border: `1px solid ${isConnected ? "rgba(34, 197, 94, 0.35)" : "rgba(239, 68, 68, 0.35)"}`,
-                boxShadow: isConnected
-                  ? "inset 0 1px 1px rgba(255, 255, 255, 0.8), 0 2px 6px rgba(34, 197, 94, 0.12)"
-                  : "inset 0 1px 1px rgba(255, 255, 255, 0.8), 0 2px 6px rgba(239, 68, 68, 0.12)",
                 cursor: "default",
-                userSelect: "none",
-                transition: "all 0.25s cubic-bezier(0.4, 0, 0.2, 1)"
+                userSelect: "none"
               }}
             >
               <span style={{
@@ -799,7 +979,7 @@ export function RealTimeAnalytics() {
               </span>
             </div>
 
-            {/* 2. Badge 3D Decompte Incidents Actifs */}
+            {/* 2. Badge Decompte Incidents Actifs */}
             <div
               style={{
                 display: "inline-flex",
@@ -807,17 +987,13 @@ export function RealTimeAnalytics() {
                 gap: "8px",
                 padding: "8px 16px",
                 borderRadius: "12px",
-                backgroundColor: activeCount > 0 ? "rgba(239, 68, 68, 0.09)" : "rgba(34, 197, 94, 0.09)",
-                border: `1px solid ${activeCount > 0 ? "rgba(239, 68, 68, 0.35)" : "rgba(34, 197, 94, 0.35)"}`,
-                boxShadow: activeCount > 0
-                  ? "inset 0 1px 1px rgba(255, 255, 255, 0.8), 0 2px 6px rgba(239, 68, 68, 0.15)"
-                  : "inset 0 1px 1px rgba(255, 255, 255, 0.8), 0 2px 6px rgba(34, 197, 94, 0.12)",
+                backgroundColor: allProblematicCards.length > 0 ? "rgba(239, 68, 68, 0.09)" : "rgba(34, 197, 94, 0.09)",
+                border: `1px solid ${allProblematicCards.length > 0 ? "rgba(239, 68, 68, 0.35)" : "rgba(34, 197, 94, 0.35)"}`,
                 cursor: "default",
-                userSelect: "none",
-                transition: "all 0.25s cubic-bezier(0.4, 0, 0.2, 1)"
+                userSelect: "none"
               }}
             >
-              {activeCount > 0 ? (
+              {allProblematicCards.length > 0 ? (
                 <WarningOctagon size={17} weight="fill" style={{ color: "#ef4444" }} />
               ) : (
                 <ShieldCheck size={17} weight="fill" style={{ color: "#22c55e" }} />
@@ -825,11 +1001,11 @@ export function RealTimeAnalytics() {
               <span style={{
                 fontSize: "0.82rem",
                 fontWeight: 750,
-                color: activeCount > 0 ? "#b91c1c" : "#15803d",
+                color: allProblematicCards.length > 0 ? "#b91c1c" : "#15803d",
                 letterSpacing: "0.01em",
                 fontFamily: "'Plus Jakarta Sans', sans-serif"
               }}>
-                {activeCount === 0 ? "Aucune Derive Detectee" : activeCount === 1 ? "1 Incident en Cours" : `${activeCount} Incidents en Cours`}
+                {allProblematicCards.length === 0 ? "Aucune Derive Detectee" : allProblematicCards.length === 1 ? "1 Incident en Cours" : `${allProblematicCards.length} Incidents en Cours`}
               </span>
             </div>
           </div>
@@ -865,8 +1041,8 @@ export function RealTimeAnalytics() {
         </div>
       </div>
 
-      {/* Carte des Equipements en Derive Critique */}
-      {activeCount > 0 && (
+      {/* Cartes des Equipements en Derive & Anomalies Critiques (Valeurs Physiques + Batterie + Deconnexion) */}
+      {allProblematicCards.length > 0 && (
         <div style={{
           backgroundColor: "var(--azura-card-bg)",
           border: "1px solid var(--azura-border)",
@@ -874,7 +1050,7 @@ export function RealTimeAnalytics() {
           padding: "24px",
           boxShadow: "0 10px 30px rgba(0,0,0,0.04)"
         }}>
-          {/* Entete du Graphique : Titre Centre & Epure */}
+          {/* Entete de la Section */}
           <div style={{
             display: "flex",
             flexDirection: "column",
@@ -901,7 +1077,7 @@ export function RealTimeAnalytics() {
                 letterSpacing: "-0.02em",
                 fontFamily: "'Plus Jakarta Sans', sans-serif"
               }}>
-                Equipements en Derive Critique ({activeCount})
+                Equipements en Derive & Anomalies Critiques ({allProblematicCards.length})
               </h2>
             </div>
           </div>
@@ -911,107 +1087,104 @@ export function RealTimeAnalytics() {
             gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
             gap: "14px"
           }}>
-            {activeSensors.map((series) => {
-              const lastPt = series.points[series.points.length - 1];
-              const isHigh = series.direction === "HIGH";
-              const idColor = series.uniqueColor; // Couleur garantie 100% unique
-              const isThisHovered = hoveredData && hoveredData.deviceId === series.device_id;
-
-              return (
-                <div
-                  key={series.device_id}
-                  style={{
-                    backgroundColor: "var(--azura-card-bg)",
-                    borderLeft: `5px solid ${idColor}`,
-                    borderTop: isThisHovered ? `1px solid ${idColor}` : "1px solid var(--azura-border)",
-                    borderRight: isThisHovered ? `1px solid ${idColor}` : "1px solid var(--azura-border)",
-                    borderBottom: isThisHovered ? `1px solid ${idColor}` : "1px solid var(--azura-border)",
-                    borderRadius: "14px",
-                    padding: "16px 18px",
-                    boxShadow: isThisHovered ? `0 8px 24px ${idColor}20` : "0 2px 10px rgba(0,0,0,0.03)",
-                    transform: isThisHovered ? "translateY(-2px)" : "none",
-                    transition: "all 0.15s ease-out",
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "space-between",
-                    gap: "10px"
-                  }}
-                >
-                  {/* Ligne 1 : Type de Grandeur + Emplacement */}
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                      <div style={{
-                        width: "10px",
-                        height: "10px",
-                        borderRadius: "50%",
-                        backgroundColor: idColor,
-                        boxShadow: `0 0 8px ${idColor}`
-                      }} />
-                      <span style={{ fontSize: "0.75rem", fontWeight: 800, color: "var(--azura-text)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                        {SENSOR_THRESHOLDS[series.device_type] ? SENSOR_THRESHOLDS[series.device_type].label : series.device_type}
-                      </span>
-                    </div>
-
-                    <span style={{ fontSize: "0.75rem", color: "var(--azura-text-muted)" }}>
-                      {series.location}
+            {allProblematicCards.map((card) => (
+              <div
+                key={card.device_id}
+                style={{
+                  backgroundColor: "var(--azura-card-bg)",
+                  borderLeft: `5px solid ${card.color}`,
+                  borderTop: "1px solid var(--azura-border)",
+                  borderRight: "1px solid var(--azura-border)",
+                  borderBottom: "1px solid var(--azura-border)",
+                  borderRadius: "14px",
+                  padding: "16px 18px",
+                  boxShadow: "0 2px 10px rgba(0,0,0,0.03)",
+                  display: "flex",
+                  flexDirection: "column",
+                  justifyContent: "space-between",
+                  gap: "10px"
+                }}
+              >
+                {/* Ligne 1 : Type de Grandeur + Emplacement */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <div style={{
+                      width: "10px",
+                      height: "10px",
+                      borderRadius: "50%",
+                      backgroundColor: card.color,
+                      boxShadow: `0 0 8px ${card.color}`
+                    }} />
+                    <span style={{ fontSize: "0.75rem", fontWeight: 800, color: "var(--azura-text)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                      {card.device_type}
                     </span>
                   </div>
 
-                  {/* Ligne 2 : Identifiant + Diagnostic */}
-                  <div>
-                    <div style={{ fontSize: "1.15rem", fontWeight: 800, color: "var(--azura-text)" }}>
-                      {series.device_id}
-                    </div>
-                    <div style={{ fontSize: "0.8rem", fontWeight: 600, color: series.directionColor, marginTop: "2px" }}>
-                      {series.diagnostic}
-                    </div>
+                  <span style={{ fontSize: "0.75rem", color: "var(--azura-text-muted)" }}>
+                    {card.location}
+                  </span>
+                </div>
+
+                {/* Ligne 2 : Identifiant + Diagnostic */}
+                <div>
+                  <div style={{ fontSize: "1.15rem", fontWeight: 800, color: "var(--azura-text)" }}>
+                    {card.device_id}
                   </div>
-
-                  {/* Ligne 3 : Valeur Reelle + Jauge de Derive */}
-                  <div>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "6px" }}>
-                      <span style={{ fontSize: "1.35rem", fontWeight: 800, color: "var(--azura-text)", fontFamily: "'JetBrains Mono', monospace" }}>
-                        {lastPt ? lastPt.value : 0} <span style={{ fontSize: "0.9rem", color: "var(--azura-text-muted)", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>{series.unit}</span>
-                      </span>
-
-                      <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                        {isHigh ? (
-                          <span style={{ fontSize: "0.75rem", fontWeight: 800, color: "#ef4444", backgroundColor: "rgba(239,68,68,0.1)", padding: "3px 8px", borderRadius: "6px", display: "flex", alignItems: "center", gap: "3px" }}>
-                            <ArrowUp size={12} weight="bold" /> +{lastPt ? lastPt.severity.toFixed(0) : 0}%
-                          </span>
-                        ) : (
-                          <span style={{ fontSize: "0.75rem", fontWeight: 800, color: "#06b6d4", backgroundColor: "rgba(6,182,212,0.1)", padding: "3px 8px", borderRadius: "6px", display: "flex", alignItems: "center", gap: "3px" }}>
-                            <ArrowDown size={12} weight="bold" /> -{lastPt ? lastPt.severity.toFixed(0) : 0}%
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Micro Barre de Progression de Gravite */}
-                    <div style={{
-                      width: "100%",
-                      height: "4px",
-                      backgroundColor: "rgba(0,0,0,0.06)",
-                      borderRadius: "9999px",
-                      overflow: "hidden"
-                    }}>
-                      <div style={{
-                        width: `${Math.min(100, Math.max(10, (lastPt ? lastPt.severity : 0) * 1.5))}%`,
-                        height: "100%",
-                        backgroundColor: series.directionColor,
-                        borderRadius: "9999px",
-                        transition: "width 0.3s ease"
-                      }} />
-                    </div>
+                  <div style={{ fontSize: "0.8rem", fontWeight: 600, color: card.color, marginTop: "2px" }}>
+                    {card.diagnostic}
                   </div>
                 </div>
-              );
-            })}
+
+                {/* Ligne 3 : Valeur Reelle + Badge */}
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "6px" }}>
+                    <span style={{ fontSize: "1.35rem", fontWeight: 800, color: "var(--azura-text)", fontFamily: "'JetBrains Mono', monospace" }}>
+                      {card.displayValue} {card.unit && <span style={{ fontSize: "0.9rem", color: "var(--azura-text-muted)", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>{card.unit}</span>}
+                    </span>
+
+                    <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                      <span style={{
+                        fontSize: "0.75rem",
+                        fontWeight: 800,
+                        color: card.badgeColor,
+                        backgroundColor: card.badgeBg,
+                        padding: "3px 8px",
+                        borderRadius: "6px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "3px"
+                      }}>
+                        {card.issueType === "PHYSICAL" && (card.isHigh ? <ArrowUp size={12} weight="bold" /> : <ArrowDown size={12} weight="bold" />)}
+                        {card.issueType === "OFFLINE" && <WifiSlash size={12} weight="bold" />}
+                        {card.badgeText}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Micro Barre de Progression */}
+                  <div style={{
+                    width: "100%",
+                    height: "4px",
+                    backgroundColor: "rgba(0,0,0,0.06)",
+                    borderRadius: "9999px",
+                    overflow: "hidden"
+                  }}>
+                    <div style={{
+                      width: `${card.barPercent}%`,
+                      height: "100%",
+                      backgroundColor: card.color,
+                      borderRadius: "9999px",
+                      transition: "width 0.3s ease"
+                    }} />
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
 
-      {/* Tableau Deroulant & Selectionnable des 10 Dernieres Alertes Kafka (Shadcn + TanStack) */}
+      {/* Tableau Deroulant & Selectionnable des 10 Dernieres Alertes Physiques (HAUT / BAS) */}
       <AlertsKafkaTable
         alerts={activeAlertsList}
         thresholdsConfig={dynamicThresholds}

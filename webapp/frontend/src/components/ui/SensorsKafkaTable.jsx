@@ -8,7 +8,9 @@ import {
   CursorClick,
   Broadcast,
   MapPin,
-  MapTrifold
+  MapTrifold,
+  WifiSlash,
+  BatteryWarning
 } from "@phosphor-icons/react";
 import {
   Table,
@@ -168,7 +170,16 @@ export function SensorsKafkaTable({ sensorsMap = {}, thresholdsConfig = null, on
       });
   };
 
-  // Construction des 15 lignes du tableau avec statut et seuils dynamiques en direct
+  // Tick regulier (1s) pour recalculer les delais d'inactivite (Heartbeat / Silence radio)
+  const [currentTick, setCurrentTick] = useState(Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTick(Date.now());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Construction des 20 lignes du tableau avec statut et seuils dynamiques en direct
   const rows = useMemo(() => {
     const currentDataSource = isStreaming ? sensorsMap : frozenSensors;
 
@@ -206,12 +217,23 @@ export function SensorsKafkaTable({ sensorsMap = {}, thresholdsConfig = null, on
       const hasRealData = value !== null && !isNaN(value);
       const displayVal = hasRealData ? value : (normMin + normMax) / 2;
 
+      // Détection du Silence Radio / Panne de transmission (Heartbeat Timeout > 9s)
+      const timeSinceLastMsg = currentTick - timestamp;
+      const isCommunicationDead = hasRealData && isStreaming && timeSinceLastMsg > 9000;
+
       let status = "NORMAL";
       let statusLabel = "Normal";
       let statusColor = "#22c55e";
 
-      // Évaluation dynamique par rapport aux bornes réelles MongoDB
-      if (displayVal > normMax || (rawStatus && rawStatus.includes("HIGH"))) {
+      if (isCommunicationDead) {
+        status = "OFFLINE";
+        statusLabel = "Hors Ligne";
+        statusColor = "#ef4444";
+      } else if (rawStatus === "LOW_BATTERY" || (liveData?.battery_level !== undefined && liveData.battery_level < 20.0)) {
+        status = "LOW_BATTERY";
+        statusLabel = "Batterie";
+        statusColor = "#f59e0b";
+      } else if (displayVal > normMax || (rawStatus && rawStatus.includes("HIGH"))) {
         status = "HIGH";
         statusLabel = "Haut";
         statusColor = "#ef4444";
@@ -240,12 +262,13 @@ export function SensorsKafkaTable({ sensorsMap = {}, thresholdsConfig = null, on
         status,
         statusLabel,
         statusColor,
-        dotColor: meta.color,
+        dotColor: status === "OFFLINE" ? "#ef4444" : meta.color,
         timeStr,
-        hasRealData
+        hasRealData,
+        isCommunicationDead
       };
     });
-  }, [sensorsMap, frozenSensors, isStreaming, dynamicThresholds]);
+  }, [sensorsMap, frozenSensors, isStreaming, dynamicThresholds, currentTick]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
@@ -592,12 +615,15 @@ export function SensorsKafkaTable({ sensorsMap = {}, thresholdsConfig = null, on
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
                     <span style={{
                       fontWeight: 800,
-                      color: row.statusColor,
+                      color: row.status === "LOW_BATTERY" ? "var(--azura-text)" : row.statusColor,
                       fontSize: "0.95rem",
                       fontFamily: "'JetBrains Mono', monospace"
                     }}>
                       {row.value} {row.unit}
                     </span>
+                    {row.status === "OFFLINE" && (
+                      <WifiSlash size={15} weight="bold" style={{ color: "#ef4444", flexShrink: 0 }} title="Silence radio / Deconnecte (> 9s sans emission)" />
+                    )}
                     {row.status === "HIGH" && (
                       <ArrowUp size={14} weight="bold" style={{ color: "#ef4444", flexShrink: 0 }} />
                     )}

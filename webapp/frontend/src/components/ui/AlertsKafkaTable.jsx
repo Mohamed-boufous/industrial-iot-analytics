@@ -153,7 +153,14 @@ export function AlertsKafkaTable({ alerts = [], thresholdsConfig = null, onRefre
 
   // Formatage et classification rigoureuse HIGH (Rouge) vs LOW (Bleu) avec seuils dynamiques
   const rows = useMemo(() => {
-    return displayedAlerts.map((al, idx) => {
+    // Filtrage strict : UNIQUEMENT les dépassements physiques (HIGH / LOW), suppression des alertes de batterie
+    const physicalOnlyAlerts = displayedAlerts.filter(al => {
+      const statusStr = String(al.status || "").toUpperCase();
+      const directionStr = String(al.direction || "").toUpperCase();
+      return statusStr !== "LOW_BATTERY" && directionStr !== "LOW_BATTERY" && (al.battery_level === undefined || al.battery_level >= 20.0);
+    });
+
+    return physicalOnlyAlerts.map((al, idx) => {
       const metricInfo = resolveMetricInfo(al.device_type || al.metric, al.device_id, al.status);
       const val = typeof al.value === "number" ? al.value : typeof al.current_value === "number" ? al.current_value : 0;
       
@@ -163,39 +170,40 @@ export function AlertsKafkaTable({ alerts = [], thresholdsConfig = null, onRefre
       const span = (effMax - effMin) || 1;
 
       // Classification exacte du sens : HIGH (Depassement Haut -> Rouge) vs LOW (Chute Basse -> Bleu)
-      let isHigh = true;
       const statusStr = String(al.status || "").toUpperCase();
       const directionStr = String(al.direction || "").toUpperCase();
 
+      let isHigh = true;
+      let directionColor = "#ef4444";
+      let statusLabel = "Haut";
+      let targetThreshold = al.threshold || effMax;
+      let sevText = "CRITIQUE";
+
       if (directionStr === "LOW" || statusStr.includes("LOW") || statusStr.includes("GEL") || statusStr.includes("FUITE") || statusStr.includes("SEC") || statusStr.includes("DECONNEXION")) {
         isHigh = false;
-      } else if (directionStr === "HIGH" || statusStr.includes("HIGH") || statusStr.includes("SURCHAUFFE") || statusStr.includes("SURPRESSION") || statusStr.includes("SURCHARGE")) {
-        isHigh = true;
+        directionColor = "#0284c7"; // Bleu pour chute basse
+        statusLabel = "Bas";
+        targetThreshold = al.threshold || effMin;
+        if (al.deviation_pct !== undefined) {
+          sevText = `+${al.deviation_pct.toFixed(1)}%`;
+        } else if (val < effMin) {
+          const pct = ((effMin - val) / span) * 100;
+          sevText = `+${pct.toFixed(1)}%`;
+        }
       } else {
-        // Verification par rapport aux bornes minimales et maximales
-        if (val < effMin) {
-          isHigh = false;
-        } else {
-          isHigh = true;
+        isHigh = true;
+        directionColor = "#ef4444"; // Rouge pour depassement haut
+        statusLabel = "Haut";
+        targetThreshold = al.threshold || effMax;
+        if (al.deviation_pct !== undefined) {
+          sevText = `+${al.deviation_pct.toFixed(1)}%`;
+        } else if (val > effMax) {
+          const pct = ((val - effMax) / span) * 100;
+          sevText = `+${pct.toFixed(1)}%`;
         }
       }
 
-      // Couleur stricte : ROUGE pour HIGH, BLEU pour LOW
-      const directionColor = isHigh ? "#ef4444" : "#0284c7"; // Rouge vif vs Bleu electrique cyan
-      const statusLabel = isHigh ? "Haut" : "Bas";
-      const targetThreshold = al.threshold || (isHigh ? effMax : effMin);
-
-      // Calcul dynamique précis de la sévérité en % d'écart
-      let sevText = "CRITIQUE";
-      if (al.deviation_pct !== undefined) {
-        sevText = `+${al.deviation_pct.toFixed(1)}%`;
-      } else if (isHigh && val > effMax) {
-        const pct = ((val - effMax) / span) * 100;
-        sevText = `+${pct.toFixed(1)}%`;
-      } else if (!isHigh && val < effMin) {
-        const pct = ((effMin - val) / span) * 100;
-        sevText = `+${pct.toFixed(1)}%`;
-      } else if (al.severity) {
+      if (al.severity) {
         sevText = typeof al.severity === "number" ? `+${al.severity.toFixed(1)}%` : String(al.severity);
       }
 
