@@ -70,5 +70,12 @@ data/processed/
 vectorstore/
 chroma_data/
 
-# Node
+# Node & Frontend
 node_modules/
+**/components.json
+
+# MCP Server Configs
+**/*mcp*.json
+.agents/mcp_config.json
+.vscode/mcp.json
+

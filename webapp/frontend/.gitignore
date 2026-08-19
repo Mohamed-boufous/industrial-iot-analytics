@@ -17,8 +17,7 @@ dist-ssr
 !.vscode/extensions.json
 .idea
 .DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+# Components & MCP config
+components.json
+.vscode/mcp.json
+

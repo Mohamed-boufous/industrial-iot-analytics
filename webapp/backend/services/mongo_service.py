@@ -1,3 +1,4 @@
+import time
 from datetime import datetime, timezone
 from pymongo import MongoClient, DESCENDING
 from config import settings
@@ -506,6 +507,81 @@ class MongoService:
         }
         db[settings.COLLECTION_CONFIG].update_one({"_id": "thresholds_config"}, update_doc, upsert=True)
         return DEFAULT_THRESHOLDS
+
+    def get_alert_recipient_config(self) -> dict:
+        """Retourne la configuration actuelle de l'email destinataire des alertes depuis MongoDB."""
+        db = self._get_db()
+        config_doc = db[settings.COLLECTION_CONFIG].find_one({"_id": "email_alerts_config"})
+        if not config_doc:
+            return {
+                "email": "",
+                "is_verified": False,
+                "verified_at": None,
+                "updated_at": None
+            }
+        return {
+            "email": config_doc.get("email", ""),
+            "is_verified": config_doc.get("is_verified", False),
+            "verified_at": config_doc.get("verified_at"),
+            "updated_at": config_doc.get("updated_at")
+        }
+
+    def save_pending_email_otp(self, email: str, otp_code: str, expires_minutes: int = 10):
+        """Enregistre le code OTP temporaire de confirmation dans MongoDB."""
+        db = self._get_db()
+        now_ts = time.time()
+        expires_ts = now_ts + (expires_minutes * 60)
+        
+        doc = {
+            "_id": "email_otp_verification",
+            "email": email.strip().lower(),
+            "otp_code": str(otp_code).strip(),
+            "expires_ts": expires_ts,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        db[settings.COLLECTION_CONFIG].update_one({"_id": "email_otp_verification"}, {"$set": doc}, upsert=True)
+
+    def verify_email_otp(self, email: str, input_code: str) -> dict:
+        """Vérifie le code OTP et persiste l'email comme destinataire officiel si valide."""
+        db = self._get_db()
+        otp_doc = db[settings.COLLECTION_CONFIG].find_one({"_id": "email_otp_verification"})
+        
+        if not otp_doc:
+            return {"success": False, "reason": "Aucun code en attente. Veuillez redemander un code."}
+            
+        stored_email = otp_doc.get("email", "")
+        stored_code = otp_doc.get("otp_code", "")
+        expires_ts = otp_doc.get("expires_ts", 0)
+        
+        if email.strip().lower() != stored_email.lower():
+            return {"success": False, "reason": "L adresse email ne correspond pas a la demande initiale."}
+            
+        if time.time() > expires_ts:
+            return {"success": False, "reason": "Le code de confirmation a expire (validite de 10 minutes)."}
+            
+        if input_code.strip() != stored_code:
+            return {"success": False, "reason": "Code de confirmation incorrect."}
+            
+        # Code valide : sauvegarde du destinataire officiel
+        now_iso = datetime.now(timezone.utc).isoformat()
+        recipient_doc = {
+            "email": email.strip().lower(),
+            "is_verified": True,
+            "verified_at": now_iso,
+            "updated_at": now_iso
+        }
+        db[settings.COLLECTION_CONFIG].update_one({"_id": "email_alerts_config"}, {"$set": recipient_doc}, upsert=True)
+        # Nettoyage du code OTP temporaire
+        db[settings.COLLECTION_CONFIG].delete_one({"_id": "email_otp_verification"})
+        
+        return {"success": True, "email": email.strip().lower(), "verified_at": now_iso}
+
+    def reset_alert_recipient_config(self) -> dict:
+        """Supprime la configuration actuelle de l'email destinataire des alertes."""
+        db = self._get_db()
+        db[settings.COLLECTION_CONFIG].delete_one({"_id": "email_alerts_config"})
+        db[settings.COLLECTION_CONFIG].delete_one({"_id": "email_otp_verification"})
+        return {"success": True, "message": "Email supprime avec succes de la configuration"}
 
 
 DEFAULT_THRESHOLDS = {

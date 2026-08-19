@@ -74,14 +74,14 @@ class EmailNotificationService:
                 inc["resolved_at_str"] = timestamp_str
                 print(f"[EmailService] 🟢 Panne TEMPORAIRE résolue pour {device_id} (Revenu au calme à {timestamp_str})")
 
-        # Évaluation de la fenêtre de 120 secondes (2 minutes)
-        if self.digest_timer_start is not None and not self.digest_email_sent:
-            elapsed = now - self.digest_timer_start
-            if elapsed >= settings.ALERT_EMAIL_THRESHOLD_SECONDS:
-                print(f"[EmailService] 🚨 Fenêtre de 120s atteinte ({round(elapsed)}s). Envoi de l'email récapitulatif unique...")
-                success = self.send_consolidated_digest_email(round(elapsed))
-                if success:
-                    self.digest_email_sent = True
+        # Envoi automatique suspendu (en attente du plan et de la logique de validation avec l'utilisateur)
+        # if self.digest_timer_start is not None and not self.digest_email_sent:
+        #     elapsed = now - self.digest_timer_start
+        #     if elapsed >= settings.ALERT_EMAIL_THRESHOLD_SECONDS:
+        #         print(f"[EmailService] 🚨 Fenêtre de 120s atteinte ({round(elapsed)}s)...")
+        #         success = self.send_consolidated_digest_email(round(elapsed))
+        #         if success:
+        #             self.digest_email_sent = True
 
     def send_consolidated_digest_email(self, elapsed_seconds: int) -> bool:
         """Génère et envoie UN SEUL email synthétique (Digest HTML Premium) avec charte AzurA."""
@@ -314,5 +314,100 @@ class EmailNotificationService:
             print(f"[EmailService] ❌ Échec de l'envoi de l'email récapitulatif: {e}")
             return False
 
+    def send_otp_verification_email(self, recipient_email: str, otp_code: str) -> bool:
+        """Envoie un email de vérification OTP optimisé pour la délivrabilité Gmail."""
+        if not settings.SMTP_USER or not settings.SMTP_PASSWORD:
+            print(f"[EmailService] ⚠️ SMTP non configuré. Simulation Code OTP pour {recipient_email} : {otp_code}")
+            return True
+
+        try:
+            import email.utils
+
+            subject = f"Code de verification AzurA : {otp_code}"
+            
+            body = f"""Bonjour,
+
+Vous avez demande a recevoir les alertes de supervision de la plateforme AzurA IoT sur cette adresse email.
+
+Voici votre code de verification personnel : {otp_code}
+
+Ce code reste valide pendant 10 minutes.
+Si vous n'etes pas a l'origine de cette demande, vous pouvez simplement ignorer ce message.
+
+Cordialement,
+Support Technique AzurA Group
+Plateforme Industrielle de Supervision IoT
+"""
+
+            msg = MIMEText(body, "plain", "utf-8")
+            msg["Subject"] = subject
+            msg["From"] = settings.SMTP_USER
+            msg["Reply-To"] = settings.SMTP_USER
+            msg["To"] = recipient_email.strip()
+            msg["Date"] = email.utils.formatdate(localtime=True)
+            msg["Message-ID"] = email.utils.make_msgid(domain="gmail.com")
+
+            server = smtplib.SMTP(settings.SMTP_SERVER, settings.SMTP_PORT)
+            server.starttls()
+            server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+            server.sendmail(settings.SMTP_USER, recipient_email.strip(), msg.as_string())
+            server.quit()
+
+            print(f"[EmailService] ✉️ Code OTP envoyé avec succès à {recipient_email} !")
+            return True
+
+        except Exception as e:
+            print(f"[EmailService] ❌ Échec envoi code OTP à {recipient_email}: {e}")
+            return False
+
+    def send_email_revocation_otp(self, recipient_email: str, otp_code: str) -> bool:
+        """Envoie un email contenant le code OTP de confirmation pour la révocation/changement d'email."""
+        if not settings.SMTP_USER or not settings.SMTP_PASSWORD:
+            print(f"[EmailService] ⚠️ SMTP non configuré. Simulation Code Révocation pour {recipient_email} : {otp_code}")
+            return True
+
+        try:
+            import email.utils
+
+            subject = f"Confirmation de changement d'email AzurA : {otp_code}"
+            
+            body = f"""Bonjour,
+
+Une demande de changement d'email destinataire des alertes a ete initiee sur la plateforme AzurA IoT.
+
+ATTENTION : La validation de ce code supprimera cette adresse email du systeme de notification.
+
+Voici votre code de securite a 6 chiffres : {otp_code}
+
+Ce code est valable pendant 10 minutes.
+Si vous n'etes pas a l'origine de cette demande, ne partagez pas ce code.
+
+Cordialement,
+Support Technique AzurA Group
+Plateforme Industrielle de Supervision IoT
+"""
+
+            msg = MIMEText(body, "plain", "utf-8")
+            msg["Subject"] = subject
+            msg["From"] = settings.SMTP_USER
+            msg["Reply-To"] = settings.SMTP_USER
+            msg["To"] = recipient_email.strip()
+            msg["Date"] = email.utils.formatdate(localtime=True)
+            msg["Message-ID"] = email.utils.make_msgid(domain="gmail.com")
+
+            server = smtplib.SMTP(settings.SMTP_SERVER, settings.SMTP_PORT)
+            server.starttls()
+            server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+            server.sendmail(settings.SMTP_USER, recipient_email.strip(), msg.as_string())
+            server.quit()
+
+            print(f"[EmailService] ✉️ Code de révocation OTP envoyé avec succès à {recipient_email} !")
+            return True
+
+        except Exception as e:
+            print(f"[EmailService] ❌ Échec envoi code révocation OTP à {recipient_email}: {e}")
+            return False
+
 # Singleton global pour le service email
 email_service = EmailNotificationService()
+

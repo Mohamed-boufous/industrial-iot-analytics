@@ -521,6 +521,8 @@ services:
     build: ./webapp/backend
     container_name: azura-api
     restart: always
+    env_file:
+      - .env
     ports:
       - "8000:8000"
     environment:

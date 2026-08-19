@@ -1,8 +1,63 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import StrokeText from '../components/ui/StrokeText';
 import SettingsThresholdsManager from '../components/ui/SettingsThresholdsManager';
+import SettingsEmailManager from '../components/ui/SettingsEmailManager';
 
 export default function Settings() {
+  const [emailConfig, setEmailConfig] = useState({
+    email: '',
+    is_verified: false,
+    verified_at: null
+  });
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Récupération de l'état de validation email depuis MongoDB
+  const fetchEmailConfig = async () => {
+    try {
+      const res = await fetch('/api/settings/email-config');
+      if (res.ok) {
+        const data = await res.json();
+        setEmailConfig(data);
+      }
+    } catch (err) {
+      console.error('Erreur chargement statut email:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchEmailConfig();
+  }, []);
+
+  if (isLoading) {
+    return (
+      <div style={{
+        minHeight: '60vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: 'var(--azura-text-muted)',
+        fontSize: '0.9rem',
+        fontWeight: 600
+      }}>
+        Chargement des parametres...
+      </div>
+    );
+  }
+
+  // CAS 1 : Aucun email vérifié -> Verrouillage d'accès complet et affichage de la modale Gate Onboarding
+  if (!emailConfig?.is_verified) {
+    return (
+      <SettingsEmailManager
+        emailConfig={emailConfig}
+        onEmailConfigChange={setEmailConfig}
+        isGateMode={true}
+      />
+    );
+  }
+
+  // CAS 2 : Email vérifié -> Déverrouillage complet de la page des paramètres
   return (
     <div style={{ maxWidth: '1440px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '1.5rem', padding: '0.5rem 0' }}>
       {/* En-tête Animé avec Titre StrokeText Centré */}
@@ -94,7 +149,13 @@ export default function Settings() {
 
       {/* 1. Gestionnaire Dynamique des Seuils Métier (MongoDB Single Source of Truth) */}
       <SettingsThresholdsManager />
+
+      {/* 2. Gestionnaire du Destinataire des Notifications d'Alerte (Lecture seule + Changement sécurisé) */}
+      <SettingsEmailManager
+        emailConfig={emailConfig}
+        onEmailConfigChange={setEmailConfig}
+        isGateMode={false}
+      />
     </div>
   );
 }
-
