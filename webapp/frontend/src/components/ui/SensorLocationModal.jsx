@@ -1,13 +1,32 @@
-import React, { useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, NavigationArrow, Gauge, Pulse, ShieldCheck, Compass } from "@phosphor-icons/react";
+import { X, NavigationArrow, Compass, GlobeHemisphereWest, Moon } from "@phosphor-icons/react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { ZONE_GEOLOCATIONS } from "../../constants/geo";
 
+// Configurations des couches de tuiles cartographiques
+const MAP_STYLES = {
+  satellite: {
+    name: "Satellite",
+    url: "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
+    attribution: "Google Satellite",
+    maxZoom: 20
+  },
+  dark: {
+    name: "Sombre",
+    url: "https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png",
+    attribution: "CartoDB Dark",
+    maxZoom: 19,
+    subdomains: "abcd"
+  }
+};
+
 export function SensorLocationModal({ isOpen, onClose, sensor }) {
   const mapContainerRef = useRef(null);
   const mapInstanceRef = useRef(null);
+  const tileLayerRef = useRef(null);
+  const [activeMapStyle, setActiveMapStyle] = useState("satellite"); // Mode Satellite par défaut
 
   // Fermeture par la touche Echap
   useEffect(() => {
@@ -42,22 +61,25 @@ export function SensorLocationModal({ isOpen, onClose, sensor }) {
     if (mapInstanceRef.current) {
       mapInstanceRef.current.remove();
       mapInstanceRef.current = null;
+      tileLayerRef.current = null;
     }
 
     // 1. Initialisation de la carte centrée et zoomée sur le capteur
     const map = L.map(mapContainerRef.current, {
       center: [sensorLat, sensorLng],
-      zoom: 15,
+      zoom: 16,
       zoomControl: false,
       attributionControl: false
     });
     mapInstanceRef.current = map;
 
-    // 2. Fond de carte cartographique haute lisibilite
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
-      maxZoom: 19,
-      subdomains: "abcd"
+    // 2. Ajout de la couche de tuiles sélectionnée (Satellite ou Sombre)
+    const currentStyleConfig = MAP_STYLES[activeMapStyle] || MAP_STYLES.satellite;
+    const tileLayer = L.tileLayer(currentStyleConfig.url, {
+      maxZoom: currentStyleConfig.maxZoom,
+      subdomains: currentStyleConfig.subdomains || "abc"
     }).addTo(map);
+    tileLayerRef.current = tileLayer;
 
     // Contrôles de zoom stylisés en bas à droite
     L.control.zoom({ position: "bottomright" }).addTo(map);
@@ -68,18 +90,18 @@ export function SensorLocationModal({ isOpen, onClose, sensor }) {
       
       const zonePolygon = L.polygon(polygonCoords, {
         color: zoneColor,
-        weight: 2.5,
-        opacity: 0.9,
+        weight: 3,
+        opacity: 0.95,
         fillColor: zoneColor,
-        fillOpacity: 0.03,
-        dashArray: "6, 6",
+        fillOpacity: 0.04,
+        dashArray: "7, 7",
         lineCap: "round",
         lineJoin: "round"
       }).addTo(map);
 
       zonePolygon.bindTooltip(
         `<div style="font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 750; font-size: 11.5px; color: #0f172a; padding: 2px 4px;">
-          Périmètre : ${zoneInfo.name}
+          Périmètre officiel : ${zoneInfo.name}
         </div>`,
         { sticky: true, className: "azura-map-tooltip" }
       );
@@ -95,16 +117,17 @@ export function SensorLocationModal({ isOpen, onClose, sensor }) {
           gap: 6px;
           padding: 4px 10px;
           border-radius: 8px;
-          background: #0f172a;
+          background: rgba(15, 23, 42, 0.92);
           color: #ffffff;
-          border: 1px solid rgba(255, 255, 255, 0.15);
-          box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28);
+          border: 1px solid rgba(255, 255, 255, 0.2);
+          box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
           font-family: 'JetBrains Mono', monospace;
           font-size: 11px;
           font-weight: 700;
           white-space: nowrap;
           margin-bottom: 5px;
           user-select: none;
+          backdrop-filter: blur(8px);
         ">
           <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background-color: ${sensor.statusColor || '#22c55e'}; box-shadow: 0 0 6px ${sensor.statusColor || '#22c55e'};"></span>
           <span>${sensor.id}</span>
@@ -113,10 +136,10 @@ export function SensorLocationModal({ isOpen, onClose, sensor }) {
         </div>
 
         <!-- Pointe Indicatrice de Précision avec Cible Radar -->
-        <div style="position: relative; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;">
-          <div style="position: absolute; width: 24px; height: 24px; border-radius: 50%; background: ${zoneColor}; opacity: 0.3; animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
-          <div style="position: relative; width: 14px; height: 14px; border-radius: 50%; background: #0f172a; border: 2.5px solid #ffffff; box-shadow: 0 2px 8px rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center;">
-            <div style="width: 4px; height: 4px; border-radius: 50%; background-color: ${zoneColor};"></div>
+        <div style="position: relative; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center;">
+          <div style="position: absolute; width: 26px; height: 26px; border-radius: 50%; background: ${zoneColor}; opacity: 0.45; animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
+          <div style="position: relative; width: 15px; height: 15px; border-radius: 50%; background: #0f172a; border: 2.5px solid #ffffff; box-shadow: 0 2px 10px rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center;">
+            <div style="width: 5px; height: 5px; border-radius: 50%; background-color: ${zoneColor};"></div>
           </div>
         </div>
       </div>
@@ -149,7 +172,7 @@ export function SensorLocationModal({ isOpen, onClose, sensor }) {
     // Recentrage propre après le montage du modal
     const timer = setTimeout(() => {
       map.invalidateSize();
-      map.setView([sensorLat, sensorLng], 15, { animate: true });
+      map.setView([sensorLat, sensorLng], 16, { animate: true });
     }, 280);
 
     return () => {
@@ -157,9 +180,16 @@ export function SensorLocationModal({ isOpen, onClose, sensor }) {
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
+        tileLayerRef.current = null;
       }
     };
-  }, [isOpen, sensor]);
+  }, [isOpen, sensor, activeMapStyle]);
+
+  // Changement dynamique du fond de carte sans recharger toute l'instance
+  const switchMapStyle = (newStyle) => {
+    if (newStyle === activeMapStyle) return;
+    setActiveMapStyle(newStyle);
+  };
 
   if (!isOpen || !sensor) return null;
 
@@ -188,7 +218,7 @@ export function SensorLocationModal({ isOpen, onClose, sensor }) {
           padding: "24px"
         }}
       >
-        {/* Arrière-plan flou sombre avec animation d'opacité */}
+        {/* Arrière-plan flou sombre avec fermeture au clic */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -204,7 +234,7 @@ export function SensorLocationModal({ isOpen, onClose, sensor }) {
           }}
         />
 
-        {/* Boîte Modale Centrée avec Animation Pop-Up / Depop-up Fluide */}
+        {/* Boîte Modale Pleine Hauteur avec Bouton X Circulaire Flottant Hors du Cadre */}
         <motion.div
           initial={{ opacity: 0, scale: 0.88, y: 24, filter: "blur(8px)" }}
           animate={{ opacity: 1, scale: 1, y: 0, filter: "blur(0px)" }}
@@ -214,27 +244,59 @@ export function SensorLocationModal({ isOpen, onClose, sensor }) {
           style={{
             position: "relative",
             width: "100%",
-            maxWidth: "840px",
-            height: "78vh",
-            maxHeight: "640px",
+            maxWidth: "920px",
+            height: "84vh",
+            maxHeight: "720px",
             backgroundColor: "var(--azura-card-bg, #ffffff)",
             border: "1px solid var(--azura-border, #e2e8f0)",
-            borderRadius: "18px",
+            borderRadius: "20px",
             boxShadow: "0 30px 70px -15px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05)",
             display: "flex",
             flexDirection: "column",
-            overflow: "hidden",
+            overflow: "visible", // Permet au bouton X de flotter hors du cadre
             zIndex: 10
           }}
         >
+          {/* Bouton de Fermeture (X) Circulaire Flottant Hors du Cadre en Haut à Droite */}
+          <motion.button
+            type="button"
+            onClick={onClose}
+            whileHover={{ scale: 1.14, rotate: 90 }}
+            whileTap={{ scale: 0.9 }}
+            transition={{ type: "spring", stiffness: 500, damping: 22 }}
+            title="Fermer la carte (Echap)"
+            style={{
+              position: "absolute",
+              top: "-14px",
+              right: "-14px",
+              width: "38px",
+              height: "38px",
+              borderRadius: "50%",
+              backgroundColor: "#0f172a",
+              border: "2px solid rgba(255, 255, 255, 0.35)",
+              boxShadow: "0 6px 20px rgba(0, 0, 0, 0.45)",
+              color: "#ffffff",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              zIndex: 60,
+              outline: "none"
+            }}
+          >
+            <X size={18} weight="bold" />
+          </motion.button>
+
           {/* 1. Entête Épuré et Haute Précision */}
           <div style={{
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            padding: "16px 20px",
+            padding: "16px 22px",
             borderBottom: "1px solid var(--azura-border, #e2e8f0)",
-            backgroundColor: "rgba(0, 0, 0, 0.01)"
+            backgroundColor: "rgba(0, 0, 0, 0.01)",
+            borderTopLeftRadius: "20px",
+            borderTopRightRadius: "20px"
           }}>
             <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
               {/* Point Indicateur Minimaliste */}
@@ -268,7 +330,7 @@ export function SensorLocationModal({ isOpen, onClose, sensor }) {
                 <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                   <h3 style={{
                     margin: 0,
-                    fontSize: "1.05rem",
+                    fontSize: "1.08rem",
                     fontWeight: 800,
                     color: "var(--azura-text, #0f172a)",
                     fontFamily: "'JetBrains Mono', monospace",
@@ -277,7 +339,7 @@ export function SensorLocationModal({ isOpen, onClose, sensor }) {
                     {sensor.id}
                   </h3>
                   <span style={{
-                    fontSize: "0.82rem",
+                    fontSize: "0.84rem",
                     fontWeight: 600,
                     color: "var(--azura-text-muted, #64748b)",
                     fontFamily: "'Plus Jakarta Sans', sans-serif"
@@ -297,146 +359,138 @@ export function SensorLocationModal({ isOpen, onClose, sensor }) {
               </div>
             </div>
 
-            {/* Actions : Coordonnées Neutres et Bouton Fermer (X) */}
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              <div style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "6px",
-                padding: "5px 12px",
-                borderRadius: "8px",
-                backgroundColor: "rgba(0, 0, 0, 0.03)",
-                border: "1px solid var(--azura-border, #e2e8f0)",
-                fontSize: "0.78rem",
-                fontWeight: 650,
-                color: "var(--azura-text, #0f172a)",
-                fontFamily: "'JetBrains Mono', monospace"
-              }}>
-                <Compass size={14} weight="bold" style={{ color: "var(--azura-text-muted)" }} />
-                <span>{sensorLat.toFixed(4)}° N, {sensorLng.toFixed(4)}° W</span>
-              </div>
-
-              {/* Bouton de Fermeture X */}
-              <motion.button
-                type="button"
-                onClick={onClose}
-                whileHover={{ scale: 1.1, backgroundColor: "rgba(0, 0, 0, 0.08)" }}
-                whileTap={{ scale: 0.92 }}
-                transition={{ type: "spring", stiffness: 500, damping: 25 }}
-                title="Fermer (Echap)"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  width: "32px",
-                  height: "32px",
-                  borderRadius: "8px",
-                  backgroundColor: "transparent",
-                  border: "1px solid var(--azura-border, #e2e8f0)",
-                  color: "var(--azura-text, #0f172a)",
-                  cursor: "pointer",
-                  outline: "none"
-                }}
-              >
-                <X size={16} weight="bold" />
-              </motion.button>
+            {/* Coordonnées GPS Neutres */}
+            <div style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "6px",
+              padding: "6px 14px",
+              borderRadius: "8px",
+              backgroundColor: "rgba(0, 0, 0, 0.03)",
+              border: "1px solid var(--azura-border, #e2e8f0)",
+              fontSize: "0.8rem",
+              fontWeight: 650,
+              color: "var(--azura-text, #0f172a)",
+              fontFamily: "'JetBrains Mono', monospace"
+            }}>
+              <Compass size={15} weight="bold" style={{ color: "var(--azura-text-muted)" }} />
+              <span>{sensorLat.toFixed(4)}° N, {sensorLng.toFixed(4)}° W</span>
             </div>
           </div>
 
-          {/* 2. Conteneur de la Carte Leaflet */}
-          <div style={{ position: "relative", flex: 1, width: "100%", height: "100%", minHeight: "320px" }}>
+          {/* 2. Conteneur de la Carte Leaflet Pleine Hauteur (100% de l'espace restant) */}
+          <div style={{
+            position: "relative",
+            flex: 1,
+            width: "100%",
+            height: "100%",
+            borderBottomLeftRadius: "20px",
+            borderBottomRightRadius: "20px",
+            overflow: "hidden"
+          }}>
             <div ref={mapContainerRef} style={{ width: "100%", height: "100%" }} />
 
-            {/* Bouton Flottant Épuré de Recentrage */}
-            <motion.button
-              type="button"
-              onClick={() => {
-                if (mapInstanceRef.current) {
-                  mapInstanceRef.current.setView([sensorLat, sensorLng], 16, { animate: true });
-                }
-              }}
-              whileHover={{ scale: 1.05, y: -1 }}
-              whileTap={{ scale: 0.95 }}
-              style={{
-                position: "absolute",
-                top: "12px",
-                right: "12px",
-                zIndex: 1000,
+            {/* Barre de Contrôles Flottants Supérieurs : Sélecteur de Style (Satellite / Sombre) + Recentrer */}
+            <div style={{
+              position: "absolute",
+              top: "14px",
+              right: "14px",
+              zIndex: 1000,
+              display: "flex",
+              alignItems: "center",
+              gap: "8px"
+            }}>
+              {/* Sélecteur de Style de Carte Moderne (Satellite <-> Sombre) */}
+              <div style={{
                 display: "inline-flex",
                 alignItems: "center",
-                gap: "6px",
-                padding: "6px 12px",
-                borderRadius: "8px",
-                backgroundColor: "rgba(255, 255, 255, 0.94)",
-                backdropFilter: "blur(8px)",
-                border: "1px solid #cbd5e1",
-                boxShadow: "0 2px 10px rgba(0, 0, 0, 0.08)",
-                color: "#0f172a",
-                fontSize: "0.75rem",
-                fontWeight: 700,
-                cursor: "pointer",
-                fontFamily: "'Plus Jakarta Sans', sans-serif"
-              }}
-            >
-              <NavigationArrow size={13} weight="bold" style={{ color: "#0f172a" }} />
-              <span>Recentrer</span>
-            </motion.button>
-          </div>
+                padding: "3px",
+                borderRadius: "10px",
+                backgroundColor: "rgba(15, 23, 42, 0.88)",
+                backdropFilter: "blur(10px)",
+                border: "1px solid rgba(255, 255, 255, 0.18)",
+                boxShadow: "0 4px 16px rgba(0, 0, 0, 0.25)"
+              }}>
+                <button
+                  type="button"
+                  onClick={() => switchMapStyle("satellite")}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "5px",
+                    padding: "5px 11px",
+                    borderRadius: "7px",
+                    backgroundColor: activeMapStyle === "satellite" ? "rgba(255, 255, 255, 0.2)" : "transparent",
+                    color: "#ffffff",
+                    border: "none",
+                    fontSize: "0.74rem",
+                    fontWeight: activeMapStyle === "satellite" ? 800 : 600,
+                    cursor: "pointer",
+                    transition: "all 0.15s ease",
+                    fontFamily: "'Plus Jakarta Sans', sans-serif",
+                    outline: "none"
+                  }}
+                >
+                  <GlobeHemisphereWest size={14} weight={activeMapStyle === "satellite" ? "fill" : "bold"} />
+                  <span>Satellite</span>
+                </button>
 
-          {/* 3. Pied de la Modale : Fiche Récapitulative Télémétrique */}
-          <div style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            flexWrap: "wrap",
-            gap: "12px",
-            padding: "12px 20px",
-            borderTop: "1px solid var(--azura-border, #e2e8f0)",
-            backgroundColor: "rgba(0, 0, 0, 0.01)"
-          }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "20px", flexWrap: "wrap" }}>
-              {/* Grandeur & Valeur */}
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <Gauge size={16} weight="bold" style={{ color: "var(--azura-text-muted)" }} />
-                <div>
-                  <span style={{ fontSize: "0.68rem", color: "var(--azura-text-muted)", fontWeight: 700, textTransform: "uppercase", display: "block" }}>
-                    Valeur Actuelle
-                  </span>
-                  <span style={{ fontSize: "0.92rem", fontWeight: 800, color: sensor.statusColor || "var(--azura-text)", fontFamily: "'JetBrains Mono', monospace" }}>
-                    {sensor.value} {sensor.unit}
-                  </span>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => switchMapStyle("dark")}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "5px",
+                    padding: "5px 11px",
+                    borderRadius: "7px",
+                    backgroundColor: activeMapStyle === "dark" ? "rgba(255, 255, 255, 0.2)" : "transparent",
+                    color: "#ffffff",
+                    border: "none",
+                    fontSize: "0.74rem",
+                    fontWeight: activeMapStyle === "dark" ? 800 : 600,
+                    cursor: "pointer",
+                    transition: "all 0.15s ease",
+                    fontFamily: "'Plus Jakarta Sans', sans-serif",
+                    outline: "none"
+                  }}
+                >
+                  <Moon size={14} weight={activeMapStyle === "dark" ? "fill" : "bold"} />
+                  <span>Sombre</span>
+                </button>
               </div>
 
-              <div style={{ width: "1px", height: "24px", backgroundColor: "var(--azura-border)" }} />
-
-              {/* Plage Nominale */}
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <Pulse size={16} weight="bold" style={{ color: "var(--azura-text-muted)" }} />
-                <div>
-                  <span style={{ fontSize: "0.68rem", color: "var(--azura-text-muted)", fontWeight: 700, textTransform: "uppercase", display: "block" }}>
-                    Plage Nominale
-                  </span>
-                  <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--azura-text)", fontFamily: "'JetBrains Mono', monospace" }}>
-                    {sensor.nominalRange}
-                  </span>
-                </div>
-              </div>
-
-              <div style={{ width: "1px", height: "24px", backgroundColor: "var(--azura-border)" }} />
-
-              {/* Statut Télémétrique */}
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <ShieldCheck size={16} weight="bold" style={{ color: sensor.statusColor || "#22c55e" }} />
-                <div>
-                  <span style={{ fontSize: "0.68rem", color: "var(--azura-text-muted)", fontWeight: 700, textTransform: "uppercase", display: "block" }}>
-                    Statut Télémétrique
-                  </span>
-                  <span style={{ fontSize: "0.85rem", fontWeight: 800, color: sensor.statusColor || "#22c55e", fontFamily: "'JetBrains Mono', monospace" }}>
-                    {sensor.statusLabel || "Normal"}
-                  </span>
-                </div>
-              </div>
+              {/* Bouton de Recentrage sur le Capteur */}
+              <motion.button
+                type="button"
+                onClick={() => {
+                  if (mapInstanceRef.current) {
+                    mapInstanceRef.current.setView([sensorLat, sensorLng], 16, { animate: true });
+                  }
+                }}
+                whileHover={{ scale: 1.06, y: -1 }}
+                whileTap={{ scale: 0.95 }}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  padding: "7px 13px",
+                  borderRadius: "10px",
+                  backgroundColor: "rgba(15, 23, 42, 0.88)",
+                  backdropFilter: "blur(10px)",
+                  border: "1px solid rgba(255, 255, 255, 0.18)",
+                  boxShadow: "0 4px 16px rgba(0, 0, 0, 0.25)",
+                  color: "#ffffff",
+                  fontSize: "0.75rem",
+                  fontWeight: 750,
+                  cursor: "pointer",
+                  fontFamily: "'Plus Jakarta Sans', sans-serif",
+                  outline: "none"
+                }}
+              >
+                <NavigationArrow size={14} weight="bold" style={{ color: "#38bdf8" }} />
+                <span>Recentrer</span>
+              </motion.button>
             </div>
           </div>
         </motion.div>
