@@ -1,12 +1,28 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  WarningOctagon,
+  ArrowCounterClockwise,
+  FloppyDisk,
+  X,
+  CheckCircle
+} from '@phosphor-icons/react';
 
 export default function SettingsThresholdsManager() {
   const [thresholds, setThresholds] = useState({});
   const [initialThresholds, setInitialThresholds] = useState({});
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [saveStatus, setSaveStatus] = useState(null); // { type: 'success' | 'error', message: string }
+  const [saveStatus, setSaveStatus] = useState(null);
+
+  // Modale de confirmation "Attention"
+  const [modalConfig, setModalConfig] = useState({
+    isOpen: false,
+    type: null,
+    title: '',
+    message: '',
+    confirmText: ''
+  });
 
   // 1. Chargement des seuils depuis MongoDB via FastAPI
   const fetchThresholds = async () => {
@@ -41,8 +57,31 @@ export default function SettingsThresholdsManager() {
     }));
   };
 
-  // 3. Sauvegarde dans MongoDB via PUT /api/settings/thresholds
-  const handleSave = async () => {
+  // 3. Demande de confirmation pour Enregistrer (Pop-up Rouge)
+  const promptSave = () => {
+    setModalConfig({
+      isOpen: true,
+      type: 'save',
+      title: 'Attention',
+      message: 'Vous etes sur le point d enregistrer de nouveaux seuils de surveillance dans MongoDB. Ces regles metier seront appliquees immediatement a l ensemble du cluster (moteur Spark, flux Kafka et tableaux de bord). Souhaitez-vous confirmer l enregistrement ?',
+      confirmText: 'Confirmer l Enregistrement'
+    });
+  };
+
+  // 4. Demande de confirmation pour Reinitialiser (Pop-up Rouge)
+  const promptReset = () => {
+    setModalConfig({
+      isOpen: true,
+      type: 'reset',
+      title: 'Attention',
+      message: 'Vous etes sur le point de restaurer l ensemble des seuils industriels aux valeurs d usine par defaut. Toutes les valeurs personnalisees actuelles seront reinitialisees dans MongoDB. Souhaitez-vous continuer ?',
+      confirmText: 'Confirmer la Reinitialisation'
+    });
+  };
+
+  // 5. Execution de la sauvegarde apres confirmation
+  const executeSave = async () => {
+    setModalConfig(prev => ({ ...prev, isOpen: false }));
     setIsSaving(true);
     setSaveStatus(null);
     try {
@@ -67,9 +106,9 @@ export default function SettingsThresholdsManager() {
     }
   };
 
-  // 4. Reinitialisation aux valeurs d'usine par defaut
-  const handleReset = async () => {
-    if (!window.confirm('Voulez-vous vraiment restaurer les seuils d usine par defaut ?')) return;
+  // 6. Execution de la reinitialisation apres confirmation
+  const executeReset = async () => {
+    setModalConfig(prev => ({ ...prev, isOpen: false }));
     setIsSaving(true);
     try {
       const res = await fetch('/api/settings/thresholds/reset', { method: 'POST' });
@@ -78,6 +117,8 @@ export default function SettingsThresholdsManager() {
         setThresholds(data.thresholds);
         setInitialThresholds(JSON.parse(JSON.stringify(data.thresholds)));
         setSaveStatus({ type: 'success', message: 'Seuils restaures aux valeurs par defaut avec succes !' });
+      } else {
+        setSaveStatus({ type: 'error', message: 'Echec de la reinitialisation.' });
       }
     } catch (error) {
       setSaveStatus({ type: 'error', message: 'Erreur lors de la reinitialisation.' });
@@ -106,75 +147,27 @@ export default function SettingsThresholdsManager() {
 
   return (
     <div style={{ marginBottom: '2.5rem', width: '100%' }}>
-      {/* En-tête de Section */}
+      {/* En-tête Épuré de la Section (Sans sous-titre) */}
       <div style={{
         display: 'flex',
-        justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: '1.25rem',
-        flexWrap: 'wrap',
-        gap: '12px'
+        gap: '10px',
+        marginBottom: '1.5rem',
+        paddingBottom: '12px',
+        borderBottom: '1px solid var(--azura-border)'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <div style={{ width: '4px', height: '18px', backgroundColor: '#2563eb', borderRadius: '2px' }} />
-          <div>
-            <h2 style={{
-              fontSize: '1.05rem',
-              fontWeight: 800,
-              color: 'var(--azura-text)',
-              fontFamily: "'Plus Jakarta Sans', sans-serif",
-              textTransform: 'uppercase',
-              letterSpacing: '0.6px',
-              margin: 0
-            }}>
-              Seuils de Surveillance & Regles Metier (Source Unique de Verite)
-            </h2>
-            <p style={{ fontSize: '0.78rem', color: 'var(--azura-text-muted)', margin: '3px 0 0 0', fontWeight: 600 }}>
-              Configuration centralisee dans MongoDB 'system_configuration'. Toute modification s applique automatiquement.
-            </p>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <button
-            onClick={handleReset}
-            disabled={isSaving}
-            style={{
-              padding: '8px 16px',
-              borderRadius: '8px',
-              backgroundColor: 'transparent',
-              border: '1px solid var(--azura-border)',
-              color: 'var(--azura-text-muted)',
-              fontSize: '0.78rem',
-              fontWeight: 700,
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-              fontFamily: "'Plus Jakarta Sans', sans-serif"
-            }}
-          >
-            Valeurs par Defaut
-          </button>
-
-          <button
-            onClick={handleSave}
-            disabled={!hasChanges || isSaving}
-            style={{
-              padding: '8px 20px',
-              borderRadius: '8px',
-              backgroundColor: hasChanges ? '#2563eb' : 'rgba(0,0,0,0.06)',
-              border: 'none',
-              color: hasChanges ? '#ffffff' : 'var(--azura-text-muted)',
-              fontSize: '0.82rem',
-              fontWeight: 800,
-              cursor: hasChanges ? 'pointer' : 'not-allowed',
-              transition: 'all 0.2s ease',
-              boxShadow: hasChanges ? '0 4px 14px rgba(37, 99, 235, 0.25)' : 'none',
-              fontFamily: "'Plus Jakarta Sans', sans-serif"
-            }}
-          >
-            {isSaving ? 'Enregistrement...' : 'Enregistrer les Modifications'}
-          </button>
-        </div>
+        <div style={{ width: '4px', height: '20px', backgroundColor: '#0284c7', borderRadius: '4px' }} />
+        <h2 style={{
+          fontSize: '1.1rem',
+          fontWeight: 800,
+          color: 'var(--azura-text)',
+          fontFamily: "'Plus Jakarta Sans', sans-serif",
+          textTransform: 'uppercase',
+          letterSpacing: '0.6px',
+          margin: 0
+        }}>
+          Seuils de Surveillance & Regles Metier
+        </h2>
       </div>
 
       {/* Message Toast de Statut */}
@@ -183,28 +176,31 @@ export default function SettingsThresholdsManager() {
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           style={{
-            padding: '12px 16px',
-            borderRadius: '10px',
-            marginBottom: '1.25rem',
-            backgroundColor: saveStatus.type === 'success' ? 'rgba(34, 197, 94, 0.1)' : 'rgba(220, 38, 38, 0.1)',
-            border: `1px solid ${saveStatus.type === 'success' ? 'rgba(34, 197, 94, 0.3)' : 'rgba(220, 38, 38, 0.3)'}`,
-            color: saveStatus.type === 'success' ? '#16a34a' : '#dc2626',
-            fontSize: '0.82rem',
+            padding: '12px 18px',
+            borderRadius: '12px',
+            marginBottom: '1.5rem',
+            backgroundColor: saveStatus.type === 'success' ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+            border: `1px solid ${saveStatus.type === 'success' ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+            color: saveStatus.type === 'success' ? '#15803d' : '#b91c1c',
+            fontSize: '0.85rem',
             fontWeight: 750,
             display: 'flex',
             alignItems: 'center',
-            gap: '8px'
+            gap: '10px',
+            boxShadow: '0 4px 16px rgba(0, 0, 0, 0.04)'
           }}
         >
+          <CheckCircle size={18} weight="fill" />
           <span>{saveStatus.message}</span>
         </motion.div>
       )}
 
-      {/* Grille des 6 Métriques Physiques */}
+      {/* Grille Simple & Épurée des 6 Cartes Métier */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))',
-        gap: '1.25rem'
+        gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))',
+        gap: '1.25rem',
+        marginBottom: '2rem'
       }}>
         {metricKeys.map(key => {
           const item = thresholds[key];
@@ -215,21 +211,21 @@ export default function SettingsThresholdsManager() {
               key={key}
               style={{
                 backgroundColor: 'var(--azura-card-bg)',
-                borderRadius: '14px',
+                borderRadius: '16px',
                 border: '1px solid var(--azura-border)',
-                padding: '1.25rem',
+                padding: '1.25rem 1.4rem',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '12px',
-                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.02)'
+                gap: '14px',
+                boxShadow: '0 2px 10px rgba(0, 0, 0, 0.02)'
               }}
             >
-              {/* En-tête de la Carte */}
+              {/* En-tête Sobre de la Carte : Titre + Référence + Unité */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div>
                   <h3 style={{
                     margin: 0,
-                    fontSize: '0.95rem',
+                    fontSize: '1rem',
                     fontWeight: 800,
                     color: 'var(--azura-text)',
                     fontFamily: "'Plus Jakarta Sans', sans-serif"
@@ -237,35 +233,46 @@ export default function SettingsThresholdsManager() {
                     {item.label}
                   </h3>
                   <span style={{ fontSize: '0.72rem', color: 'var(--azura-text-muted)', fontWeight: 600 }}>
-                    {item.standard_reference}
+                    {item.standard_reference || 'Norme Industrielle AzurA'}
                   </span>
                 </div>
+
                 <span style={{
                   fontSize: '0.75rem',
                   fontWeight: 800,
-                  color: '#2563eb',
-                  backgroundColor: 'rgba(37, 99, 235, 0.08)',
-                  padding: '3px 8px',
-                  borderRadius: '6px'
+                  color: 'var(--azura-text)',
+                  backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                  border: '1px solid var(--azura-border)',
+                  padding: '4px 10px',
+                  borderRadius: '8px',
+                  fontFamily: "'JetBrains Mono', monospace"
                 }}>
-                  Unite : {item.unit}
+                  {item.unit}
                 </span>
               </div>
 
-              {/* Formulaire Min / Max */}
+              {/* Formulaire des Bornes Min & Max */}
               <div style={{
                 display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
+                gridTemplateColumns: key === 'battery' ? '1fr' : '1fr 1fr',
                 gap: '12px',
                 backgroundColor: 'rgba(0, 0, 0, 0.02)',
-                padding: '12px',
-                borderRadius: '10px',
+                padding: '12px 14px',
+                borderRadius: '12px',
                 border: '1px solid var(--azura-border)'
               }}>
                 {/* Borne Minimale */}
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 800, color: 'var(--azura-text-muted)', marginBottom: '4px', textTransform: 'uppercase' }}>
-                    Borne Min ({item.unit})
+                  <label style={{
+                    display: 'block',
+                    fontSize: '0.7rem',
+                    fontWeight: 800,
+                    color: 'var(--azura-text-muted)',
+                    marginBottom: '6px',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}>
+                    {key === 'battery' ? 'Seuil Critique' : `Seuil Min (${item.unit})`}
                   </label>
                   <input
                     type="number"
@@ -274,60 +281,328 @@ export default function SettingsThresholdsManager() {
                     onChange={(e) => handleValueChange(key, 'min', e.target.value)}
                     style={{
                       width: '100%',
-                      padding: '8px 10px',
-                      borderRadius: '6px',
+                      padding: '8px 12px',
+                      borderRadius: '8px',
                       border: '1px solid var(--azura-border)',
                       backgroundColor: 'var(--azura-card-bg)',
                       color: 'var(--azura-text)',
                       fontWeight: 800,
-                      fontSize: '0.95rem',
-                      fontFamily: 'monospace',
-                      boxSizing: 'border-box'
+                      fontSize: '1rem',
+                      fontFamily: "'JetBrains Mono', monospace",
+                      boxSizing: 'border-box',
+                      outline: 'none'
                     }}
                   />
                 </div>
 
-                {/* Borne Maximale */}
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 800, color: 'var(--azura-text-muted)', marginBottom: '4px', textTransform: 'uppercase' }}>
-                    Borne Max ({item.unit})
-                  </label>
-                  <input
-                    type="number"
-                    step={item.step || 0.1}
-                    value={item.max}
-                    onChange={(e) => handleValueChange(key, 'max', e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '8px 10px',
-                      borderRadius: '6px',
-                      border: '1px solid var(--azura-border)',
-                      backgroundColor: 'var(--azura-card-bg)',
-                      color: 'var(--azura-text)',
+                {/* Borne Maximale (si non batterie) */}
+                {key !== 'battery' && (
+                  <div>
+                    <label style={{
+                      display: 'block',
+                      fontSize: '0.7rem',
                       fontWeight: 800,
-                      fontSize: '0.95rem',
-                      fontFamily: 'monospace',
-                      boxSizing: 'border-box'
-                    }}
-                  />
-                </div>
+                      color: 'var(--azura-text-muted)',
+                      marginBottom: '6px',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px'
+                    }}>
+                      Seuil Max ({item.unit})
+                    </label>
+                    <input
+                      type="number"
+                      step={item.step || 0.1}
+                      value={item.max}
+                      onChange={(e) => handleValueChange(key, 'max', e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '8px 12px',
+                        borderRadius: '8px',
+                        border: '1px solid var(--azura-border)',
+                        backgroundColor: 'var(--azura-card-bg)',
+                        color: 'var(--azura-text)',
+                        fontWeight: 800,
+                        fontSize: '1rem',
+                        fontFamily: "'JetBrains Mono', monospace",
+                        boxSizing: 'border-box',
+                        outline: 'none'
+                      }}
+                    />
+                  </div>
+                )}
               </div>
 
-              {/* Descriptions des Seuils Critiques */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.72rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#dc2626' }}>
-                  <span style={{ fontWeight: 800 }}>• Alerte Basse :</span>
-                  <span>{item.danger_low_description}</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#dc2626' }}>
-                  <span style={{ fontWeight: 800 }}>• Alerte Haute :</span>
-                  <span>{item.danger_high_description}</span>
-                </div>
+              {/* Indicateurs de Plages & Statuts (Seuls éléments en couleurs pour clarté maximale) */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.72rem', flexWrap: 'wrap', gap: '6px' }}>
+                <span style={{
+                  color: '#0284c7',
+                  backgroundColor: 'rgba(2, 132, 199, 0.08)',
+                  padding: '3px 8px',
+                  borderRadius: '6px',
+                  fontWeight: 700
+                }}>
+                  {key === 'battery' ? `Critique : < ${item.min}%` : `Bas : < ${item.min} ${item.unit}`}
+                </span>
+
+                <span style={{
+                  color: '#15803d',
+                  backgroundColor: 'rgba(34, 197, 94, 0.08)',
+                  padding: '3px 8px',
+                  borderRadius: '6px',
+                  fontWeight: 700
+                }}>
+                  {key === 'battery' ? `Nominal : >= ${item.min}%` : `Nominal : [${item.min} - ${item.max}]`}
+                </span>
+
+                {key !== 'battery' && (
+                  <span style={{
+                    color: '#dc2626',
+                    backgroundColor: 'rgba(220, 38, 38, 0.08)',
+                    padding: '3px 8px',
+                    borderRadius: '6px',
+                    fontWeight: 700
+                  }}>
+                    Haut : &gt; {item.max} {item.unit}
+                  </span>
+                )}
               </div>
             </div>
           );
         })}
       </div>
+
+      {/* Barre d'Actions Inférieure (Boutons en bas) */}
+      <div style={{
+        backgroundColor: 'var(--azura-card-bg)',
+        border: '1px solid var(--azura-border)',
+        borderRadius: '16px',
+        padding: '16px 24px',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: '16px',
+        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.03)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{
+            width: '8px',
+            height: '8px',
+            borderRadius: '50%',
+            backgroundColor: hasChanges ? '#f59e0b' : '#10b981'
+          }} />
+          <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--azura-text)' }}>
+            {hasChanges ? 'Modifications en attente d enregistrement' : 'Seuils synchronises avec MongoDB'}
+          </span>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {/* Bouton 1 : Valeurs par Défaut */}
+          <button
+            onClick={promptReset}
+            disabled={isSaving}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '10px 20px',
+              borderRadius: '10px',
+              backgroundColor: 'transparent',
+              border: '1px solid var(--azura-border)',
+              color: 'var(--azura-text)',
+              fontSize: '0.85rem',
+              fontWeight: 700,
+              cursor: isSaving ? 'not-allowed' : 'pointer',
+              transition: 'all 0.2s ease',
+              fontFamily: "'Plus Jakarta Sans', sans-serif"
+            }}
+          >
+            <ArrowCounterClockwise size={16} weight="bold" />
+            Valeurs par Defaut
+          </button>
+
+          {/* Bouton 2 : Enregistrer les Modifications */}
+          <button
+            onClick={promptSave}
+            disabled={!hasChanges || isSaving}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '10px 24px',
+              borderRadius: '10px',
+              backgroundColor: hasChanges ? '#0284c7' : 'rgba(0,0,0,0.06)',
+              border: 'none',
+              color: hasChanges ? '#ffffff' : 'var(--azura-text-muted)',
+              fontSize: '0.85rem',
+              fontWeight: 800,
+              cursor: hasChanges && !isSaving ? 'pointer' : 'not-allowed',
+              transition: 'all 0.2s ease',
+              boxShadow: hasChanges ? '0 4px 16px rgba(2, 132, 199, 0.3)' : 'none',
+              fontFamily: "'Plus Jakarta Sans', sans-serif"
+            }}
+          >
+            <FloppyDisk size={16} weight="bold" />
+            {isSaving ? 'Enregistrement...' : 'Enregistrer les Modifications'}
+          </button>
+        </div>
+      </div>
+
+      {/* Pop-up Modale Interactive "Attention" (100% ROUGE pour les 2 actions) */}
+      <AnimatePresence>
+        {modalConfig.isOpen && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.65)',
+            backdropFilter: 'blur(6px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '20px'
+          }}>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              transition={{ duration: 0.2 }}
+              style={{
+                backgroundColor: 'var(--azura-card-bg)',
+                borderRadius: '18px',
+                border: '1.5px solid rgba(239, 68, 68, 0.35)',
+                boxShadow: '0 25px 60px rgba(0, 0, 0, 0.3), 0 0 30px rgba(239, 68, 68, 0.12)',
+                maxWidth: '480px',
+                width: '100%',
+                overflow: 'hidden'
+              }}
+            >
+              {/* En-tête Rouge de la Modale */}
+              <div style={{
+                padding: '20px 24px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                borderBottom: '1px solid var(--azura-border)',
+                backgroundColor: 'rgba(239, 68, 68, 0.04)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{
+                    width: '42px',
+                    height: '42px',
+                    borderRadius: '12px',
+                    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#ef4444',
+                    boxShadow: '0 0 12px rgba(239, 68, 68, 0.2)'
+                  }}>
+                    <WarningOctagon size={26} weight="fill" />
+                  </div>
+
+                  <div>
+                    <h3 style={{
+                      margin: 0,
+                      fontSize: '1.1rem',
+                      fontWeight: 800,
+                      color: '#ef4444',
+                      fontFamily: "'Plus Jakarta Sans', sans-serif",
+                      letterSpacing: '-0.01em'
+                    }}>
+                      Attention
+                    </h3>
+                    <span style={{ fontSize: '0.78rem', color: 'var(--azura-text-muted)', fontWeight: 600 }}>
+                      Confirmation de Securite
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setModalConfig(prev => ({ ...prev, isOpen: false }))}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--azura-text-muted)',
+                    cursor: 'pointer',
+                    padding: '6px',
+                    borderRadius: '8px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  <X size={20} weight="bold" />
+                </button>
+              </div>
+
+              {/* Corps de la Modale */}
+              <div style={{ padding: '24px' }}>
+                <p style={{
+                  fontSize: '0.92rem',
+                  lineHeight: '1.6',
+                  color: 'var(--azura-text)',
+                  margin: 0,
+                  fontWeight: 500,
+                  fontFamily: "'Plus Jakarta Sans', sans-serif"
+                }}>
+                  {modalConfig.message}
+                </p>
+              </div>
+
+              {/* Pied de Modale : Bouton de Soumission 100% ROUGE */}
+              <div style={{
+                padding: '16px 24px',
+                backgroundColor: 'rgba(0, 0, 0, 0.02)',
+                borderTop: '1px solid var(--azura-border)',
+                display: 'flex',
+                justifyContent: 'flex-end',
+                alignItems: 'center',
+                gap: '12px'
+              }}>
+                <button
+                  onClick={() => setModalConfig(prev => ({ ...prev, isOpen: false }))}
+                  style={{
+                    padding: '10px 18px',
+                    borderRadius: '10px',
+                    backgroundColor: 'transparent',
+                    border: '1px solid var(--azura-border)',
+                    color: 'var(--azura-text)',
+                    fontSize: '0.85rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    fontFamily: "'Plus Jakarta Sans', sans-serif"
+                  }}
+                >
+                  Annuler
+                </button>
+
+                <button
+                  onClick={modalConfig.type === 'reset' ? executeReset : executeSave}
+                  style={{
+                    padding: '10px 22px',
+                    borderRadius: '10px',
+                    backgroundColor: '#ef4444',
+                    border: 'none',
+                    color: '#ffffff',
+                    fontSize: '0.85rem',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 16px rgba(239, 68, 68, 0.4)',
+                    fontFamily: "'Plus Jakarta Sans', sans-serif",
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  {modalConfig.confirmText}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
