@@ -1,328 +1,409 @@
 import os
 import smtplib
 import time
+import email.utils
 from datetime import datetime, timezone
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.image import MIMEImage
 from config import settings
+from services.mongo_service import mongo_service
+
+# Référentiel des 20 capteurs industriels d'exploitation AzurA
+ALL_KNOWN_SENSORS = [
+    {"id": "sensor_temp_001", "type": "temperature", "location": "agadir_serre_1"},
+    {"id": "sensor_vib_001", "type": "vibration", "location": "agadir_serre_1"},
+    {"id": "sensor_pres_001", "type": "pression", "location": "agadir_serre_1"},
+    {"id": "sensor_hum_001", "type": "humidite", "location": "agadir_serre_1"},
+    {"id": "sensor_pwr_001", "type": "consommation", "location": "agadir_serre_1"},
+    {"id": "sensor_temp_002", "type": "temperature", "location": "dakhla_station_emballage"},
+    {"id": "sensor_vib_002", "type": "vibration", "location": "dakhla_station_emballage"},
+    {"id": "sensor_pres_002", "type": "pression", "location": "dakhla_station_emballage"},
+    {"id": "sensor_hum_002", "type": "humidite", "location": "dakhla_station_emballage"},
+    {"id": "sensor_pwr_002", "type": "consommation", "location": "dakhla_station_emballage"},
+    {"id": "sensor_temp_003", "type": "temperature", "location": "kenitra_station_filtrage"},
+    {"id": "sensor_vib_003", "type": "vibration", "location": "kenitra_station_filtrage"},
+    {"id": "sensor_pres_003", "type": "pression", "location": "kenitra_station_filtrage"},
+    {"id": "sensor_hum_003", "type": "humidite", "location": "kenitra_station_filtrage"},
+    {"id": "sensor_pwr_003", "type": "consommation", "location": "kenitra_station_filtrage"},
+    {"id": "sensor_temp_004", "type": "temperature", "location": "marrakech_zone_logistique"},
+    {"id": "sensor_vib_004", "type": "vibration", "location": "marrakech_zone_logistique"},
+    {"id": "sensor_pres_004", "type": "pression", "location": "marrakech_zone_logistique"},
+    {"id": "sensor_hum_004", "type": "humidite", "location": "marrakech_zone_logistique"},
+    {"id": "sensor_pwr_004", "type": "consommation", "location": "marrakech_zone_logistique"},
+]
 
 class EmailNotificationService:
     """
-    Service de notification par email consolidé (Digest HTML Premium).
-    - Charte graphique officielle Azura Group (Vert AzurA #1B5E20, Jaune Soleil #FBC02D, Rouge Alerte #D32F2F).
-    - Intégration du logo officiel inline via Content-ID (cid:azura_logo).
-    - Design exécutif moderne, épuré et ultra-lisible.
+    Moteur d'Alertes Email Intelligent, Anti-Saturation (Zéro Spam) et Haute Décision.
+    - Règle 1 : Dérive physique continue > 5 minutes (300s).
+    - Règle 2 : Équipement hors service / silence radio > 10 minutes (600s).
+    - Règle 3 : Batterie critique (< 20%).
+    - Cooldown : 1 heure par capteur / type d'incident.
+    - Consolidation en rafale (Batching 30s) pour envoyer un seul email synthétique Noir & Blanc.
     """
 
+    DRIFT_THRESHOLD_SEC = 300       # 5 minutes de dérive continue
+    OFFLINE_THRESHOLD_SEC = 600     # 10 minutes de silence radio
+    BATTERY_CRITICAL_LIMIT = 20.0   # Seuil critique de batterie (%)
+    COOLDOWN_SEC = 3600             # 1 heure de temporisation anti-spam
+    BATCH_WINDOW_SEC = 30           # Fenêtre de 30s de consolidation
+
     def __init__(self):
-        # Dictionnaire d'historique des incidents par capteur :
-        # { "device_id": { "first_seen": timestamp, "first_status": str, "first_val": float, ... } }
-        self.incidents: dict[str, dict] = {}
-        self.digest_timer_start: float | None = None
-        self.digest_email_sent: bool = False
+        # Suivi des dérives physiques : { device_id: { "first_seen": ts, "status": str, "val": float, ... } }
+        self.drift_trackers: dict[str, dict] = {}
+        # Suivi du dernier battement de cœur (heartbeat) pré-initialisé pour les 20 capteurs
+        self.heartbeat_trackers: dict[str, dict] = {}
+        now = time.time()
+        for s in ALL_KNOWN_SENSORS:
+            self.heartbeat_trackers[s["id"]] = {
+                "last_seen": now,
+                "location": s["location"],
+                "type": s["type"]
+            }
+
+        # Historique des envois pour le Cooldown (1h) : { (device_id, alert_type): last_sent_ts }
+        self.cooldown_trackers: dict[tuple, float] = {}
+        # File d'attente des alertes qualifiées en attente de consolidation (Batch)
+        self.pending_batch: list[dict] = []
+        self.batch_timer_start: float | None = None
+
+    def _get_active_recipient(self) -> str | None:
+        """
+        Récupère EXCLUSIVEMENT l'email destinataire vérifié et enregistré dans MongoDB.
+        INTERDICTION STRICTE d'envoyer vers l'expéditeur technique azuragroupeiot@gmail.com.
+        """
+        try:
+            cfg = mongo_service.get_alert_recipient_config()
+            if cfg.get("is_verified") and cfg.get("email"):
+                verified_email = cfg.get("email").strip()
+                # On bloque tout envoi vers l'adresse d'expédition technique
+                if verified_email and verified_email.lower() != (settings.SMTP_USER or "").strip().lower():
+                    return verified_email
+        except Exception as e:
+            print(f"[EmailEngine] Erreur lecture destinataire MongoDB: {e}")
+        return None
 
     def process_alert_event(self, alert_data: dict):
-        """
-        Enregistre chaque événement reçu du consommateur Kafka et évalue si le rapport récapitulatif doit être envoyé.
-        """
+        """Traite chaque événement reçu de Kafka et applique les 3 règles de déclenchement."""
         device_id = alert_data.get("device_id")
-        status = alert_data.get("status")
-        val = alert_data.get("value", 0.0)
-        unit = alert_data.get("unit", "")
-        location = alert_data.get("location", "AZURA Site")
-        timestamp_str = alert_data.get("timestamp", datetime.now(timezone.utc).isoformat())
-
         if not device_id:
             return
 
+        status = alert_data.get("status")
+        val = alert_data.get("value", 0.0)
+        unit = alert_data.get("unit", "")
+        location = alert_data.get("location", "Site AzurA")
+        sensor_type = alert_data.get("type") or alert_data.get("device_type", "sensor")
+        battery = alert_data.get("battery") if alert_data.get("battery") is not None else alert_data.get("battery_level", 100.0)
         now = time.time()
 
-        # Cas 1 : Réception d'un statut ANORMAL (début ou continuité de panne)
-        if status and status != "NORMAL":
-            if self.digest_timer_start is None:
-                self.digest_timer_start = now
-                self.digest_email_sent = False
-                print(f"[EmailService] ⏱️ Premier incident détecté ({device_id}). Démarrage de la fenêtre de 120s pour le rapport récapitulatif.")
+        # 1. Mise à jour du battement de cœur (Heartbeat)
+        self.heartbeat_trackers[device_id] = {
+            "last_seen": now,
+            "location": location,
+            "type": sensor_type
+        }
 
-            if device_id not in self.incidents:
-                self.incidents[device_id] = {
-                    "device_id": device_id,
+        # ═════════════════════════════════════════════════════════════════════
+        # RÈGLE 1 : DÉRIVE PHYSIQUE CONTINUE > 5 MINUTES (300 SECONDES)
+        # ═════════════════════════════════════════════════════════════════════
+        if status in ["HAUT", "BAS"]:
+            if device_id not in self.drift_trackers:
+                self.drift_trackers[device_id] = {
                     "first_seen": now,
-                    "first_seen_str": timestamp_str,
-                    "first_status": status,
-                    "first_val": val,
-                    "last_status": status,
-                    "last_val": val,
+                    "status": status,
+                    "val": val,
                     "unit": unit,
                     "location": location,
-                    "is_resolved": False,
-                    "resolved_at_str": None,
+                    "type": sensor_type
                 }
-                print(f"[EmailService] 📌 Panne enregistrée pour {device_id} ({status} - {val} {unit})")
             else:
-                inc = self.incidents[device_id]
-                inc["last_status"] = status
-                inc["last_val"] = val
-                inc["is_resolved"] = False
+                track = self.drift_trackers[device_id]
+                track["val"] = val
+                track["status"] = status
+                duration = now - track["first_seen"]
 
-        # Cas 2 : Réception d'un retour à la normale (panne temporaire résolue)
+                if duration >= self.DRIFT_THRESHOLD_SEC:
+                    cooldown_key = (device_id, "DRIFT")
+                    last_sent = self.cooldown_trackers.get(cooldown_key, 0)
+                    if (now - last_sent) >= self.COOLDOWN_SEC:
+                        self._enqueue_alert({
+                            "device_id": device_id,
+                            "type": sensor_type,
+                            "location": location,
+                            "category": "DERIVE PHYSIQUE",
+                            "description": f"Seuil {status} confirme ({val} {unit})",
+                            "duration_str": f"{int(duration // 60)} min {int(duration % 60)} s",
+                            "severity": "CRITIQUE"
+                        }, cooldown_key)
+
         elif status == "NORMAL":
-            if device_id in self.incidents and not self.incidents[device_id]["is_resolved"]:
-                inc = self.incidents[device_id]
-                inc["is_resolved"] = True
-                inc["resolved_at_str"] = timestamp_str
-                print(f"[EmailService] 🟢 Panne TEMPORAIRE résolue pour {device_id} (Revenu au calme à {timestamp_str})")
+            # Si le capteur redevient normal, on réinitialise son suivi de dérive
+            if device_id in self.drift_trackers:
+                del self.drift_trackers[device_id]
 
-        # Envoi automatique suspendu (en attente du plan et de la logique de validation avec l'utilisateur)
-        # if self.digest_timer_start is not None and not self.digest_email_sent:
-        #     elapsed = now - self.digest_timer_start
-        #     if elapsed >= settings.ALERT_EMAIL_THRESHOLD_SECONDS:
-        #         print(f"[EmailService] 🚨 Fenêtre de 120s atteinte ({round(elapsed)}s)...")
-        #         success = self.send_consolidated_digest_email(round(elapsed))
-        #         if success:
-        #             self.digest_email_sent = True
+        # ═════════════════════════════════════════════════════════════════════
+        # RÈGLE 3 : BATTERIE CRITIQUE (< 20%)
+        # ═════════════════════════════════════════════════════════════════════
+        if battery is not None and (battery < self.BATTERY_CRITICAL_LIMIT or status == "CRITICAL_BATTERY"):
+            cooldown_key = (device_id, "BATTERY")
+            last_sent = self.cooldown_trackers.get(cooldown_key, 0)
+            if (now - last_sent) >= self.COOLDOWN_SEC:
+                self._enqueue_alert({
+                    "device_id": device_id,
+                    "type": sensor_type,
+                    "location": location,
+                    "category": "BATTERIE CRITIQUE",
+                    "description": f"Niveau de charge critique a {battery}%",
+                    "duration_str": "Imminent",
+                    "severity": "ATTENTION"
+                }, cooldown_key)
 
-    def send_consolidated_digest_email(self, elapsed_seconds: int) -> bool:
-        """Génère et envoie UN SEUL email synthétique (Digest HTML Premium) avec charte AzurA."""
-        if not self.incidents:
+        # Vérification du déclenchement du batch
+        self._check_batch_flush()
+
+    def check_offline_sensors_cycle(self):
+        """Vérifie périodiquement les capteurs muets depuis plus de 10 minutes (RÈGLE 2)."""
+        now = time.time()
+        for device_id, hb in list(self.heartbeat_trackers.items()):
+            silence_duration = now - hb["last_seen"]
+            if silence_duration >= self.OFFLINE_THRESHOLD_SEC:
+                cooldown_key = (device_id, "OFFLINE")
+                last_sent = self.cooldown_trackers.get(cooldown_key, 0)
+                if (now - last_sent) >= self.COOLDOWN_SEC:
+                    self._enqueue_alert({
+                        "device_id": device_id,
+                        "type": hb.get("type", "sensor"),
+                        "location": hb.get("location", "Site AzurA"),
+                        "category": "EQUIPEMENT HORS SERVICE",
+                        "description": "Perte de signal telemetrique (Silence Radio)",
+                        "duration_str": f"{int(silence_duration // 60)} minutes",
+                        "severity": "CRITIQUE"
+                    }, cooldown_key)
+
+        self._check_batch_flush()
+
+    def _enqueue_alert(self, alert_item: dict, cooldown_key: tuple):
+        """Ajoute une alerte qualifiée dans la file d'attente de consolidation."""
+        now = time.time()
+        self.cooldown_trackers[cooldown_key] = now
+        self.pending_batch.append(alert_item)
+
+        if self.batch_timer_start is None:
+            self.batch_timer_start = now
+            print(f"[EmailEngine] 📥 Nouvelle alerte qualifiee ({alert_item['device_id']}). Demarrage fenetre de regroupement ({self.BATCH_WINDOW_SEC}s)...")
+
+    def _check_batch_flush(self):
+        """Envoie le rapport consolidé si la fenêtre de 30 secondes s'est écoulée."""
+        if not self.pending_batch or self.batch_timer_start is None:
+            return
+
+        now = time.time()
+        if (now - self.batch_timer_start) >= self.BATCH_WINDOW_SEC:
+            alerts_to_send = list(self.pending_batch)
+            self.pending_batch = []
+            self.batch_timer_start = None
+            self._send_monochrome_incident_report(alerts_to_send)
+
+    def _send_monochrome_incident_report(self, alerts: list[dict]):
+        """Génère et transmet l'email d'incident au format élégant Noir & Blanc avec logo AzurA."""
+        recipient = self._get_active_recipient()
+        if not recipient or not settings.SMTP_USER or not settings.SMTP_PASSWORD:
+            print(f"[EmailEngine] ⚠️ SMTP ou destinataire non configure. Simulation envoi pour {len(alerts)} alertes a {recipient}")
+            # Enregistrement dans l'historique même en simulation
+            mongo_service.log_email_notification({
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "recipient": recipient or "non_configure@azura.com",
+                "subject": f"Alerte Supervision AzurA IoT — {len(alerts)} Equipement(s) Impacte(s)",
+                "total_alerts": len(alerts),
+                "alerts": alerts
+            })
             return False
 
-        # Séparation des capteurs entre Permanents (non résolus) et Temporaires (résolus)
-        permanent_faults = [inc for inc in self.incidents.values() if not inc["is_resolved"]]
-        temporary_faults = [inc for inc in self.incidents.values() if inc["is_resolved"]]
-
-        if not settings.SMTP_USER or not settings.SMTP_PASSWORD or not settings.ALERT_EMAIL_RECIPIENT:
-            print("\n" + "="*70)
-            print(f"  [SIMULATION RAPPORT EMAIL CONSOLIDÉ (Après {elapsed_seconds}s)]")
-            print(f"  - Pannes PERMANENTES (Toujours en alerte > 2 min) : {len(permanent_faults)}")
-            for p in permanent_faults:
-                print(f"    * {p['device_id']} ({p['location']}) : {p['last_status']} | Val: {p['last_val']} {p['unit']}")
-            print(f"  - Pannes TEMPORAIRES (Résolues automatiquement) : {len(temporary_faults)}")
-            for t in temporary_faults:
-                print(f"    * {t['device_id']} ({t['location']}) : Début {t['first_status']} à {t['first_seen_str']} ➔ Résolu à {t['resolved_at_str']}")
-            print("="*70 + "\n")
-            return True
-
         try:
-            subject = f"🚨 [AZURA SUPERVISION] Rapport d'Incident IoT — Bilan de Synthèse ({elapsed_seconds}s)"
-            
-            # Construction des cartes/lignes HTML pour les pannes permanentes
-            perm_rows = ""
-            for p in permanent_faults:
-                perm_rows += f"""
-                <tr style="border-bottom: 1px solid #EEF2F6;">
-                    <td style="padding: 14px 16px; font-weight: 700; color: #1E293B;">
-                        <span style="display: inline-block; width: 8px; height: 8px; background-color: #D32F2F; border-radius: 50%; margin-right: 8px;"></span>
-                        {p['device_id']}
+            total_incidents = len(alerts)
+            subject = f"Alerte Supervision AzurA IoT — {total_incidents} Equipement(s) Impacte(s)"
+
+            # 1. Version Texte Brut
+            plain_rows = ""
+            for a in alerts:
+                plain_rows += f"- [{a['category']}] {a['device_id']} ({a['location']}) : {a['description']} (Duree: {a['duration_str']})\n"
+
+            plain_text = f"""AzurA Group — Plateforme Industrielle de Supervision IoT
+RAPPORT OFFICIEL D'INCIDENT TECHNIQUE
+
+Date : {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M:%S UTC')}
+Destinataire : {recipient}
+
+Synthèse des alertes qualifiées nécessitant une prise de décision :
+
+{plain_rows}
+
+Mesures recommandées :
+1. Consulter le tableau de bord temps réel : http://84.8.222.106/
+2. Vérifier l'état physique des équipements mentionnés sur site.
+
+--
+Support Technique AzurA Group
+Plateforme Industrielle de Supervision IoT
+"""
+
+            # 2. Version HTML 100% Noir & Blanc (Style Minimaliste & Logo)
+            table_rows_html = ""
+            for a in alerts:
+                table_rows_html += f"""
+                <tr style="border-bottom: 1px solid #E5E7EB;">
+                    <td style="padding: 12px 14px; font-weight: 800; color: #111827; font-family: monospace; font-size: 13px;">
+                        {a['device_id']}
                     </td>
-                    <td style="padding: 14px 16px; color: #475569; font-size: 13px;">📍 {p['location']}</td>
-                    <td style="padding: 14px 16px;">
-                        <span style="background-color: #FFEBEE; color: #D32F2F; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 20px; border: 1px solid #FFCDD2;">
-                            {p['last_status']}
+                    <td style="padding: 12px 14px; color: #111827; font-size: 12px; font-weight: 700;">
+                        <span style="display: inline-block; padding: 2px 8px; border: 1px solid #111827; border-radius: 4px; font-size: 10.5px;">
+                            {a['category']}
                         </span>
                     </td>
-                    <td style="padding: 14px 16px; font-weight: 700; color: #B71C1C; font-size: 15px;">{p['last_val']} {p['unit']}</td>
-                    <td style="padding: 14px 16px; color: #D32F2F; font-size: 12px; font-weight: 600;">Intervention requise</td>
+                    <td style="padding: 12px 14px; color: #374151; font-size: 12px;">
+                        <strong>{a['description']}</strong><br/>
+                        <span style="color: #6B7280; font-size: 11px;">Durée : {a['duration_str']}</span>
+                    </td>
+                    <td style="padding: 12px 14px; color: #4B5563; font-size: 12px;">
+                        {a['location']}
+                    </td>
                 </tr>
                 """
 
-            # Construction des cartes/lignes HTML pour les pannes temporaires
-            temp_rows = ""
-            for t in temporary_faults:
-                temp_rows += f"""
-                <tr style="border-bottom: 1px solid #EEF2F6;">
-                    <td style="padding: 14px 16px; font-weight: 700; color: #1E293B;">
-                        <span style="display: inline-block; width: 8px; height: 8px; background-color: #2E7D32; border-radius: 50%; margin-right: 8px;"></span>
-                        {t['device_id']}
-                    </td>
-                    <td style="padding: 14px 16px; color: #475569; font-size: 13px;">📍 {t['location']}</td>
-                    <td style="padding: 14px 16px;">
-                        <span style="background-color: #E8F5E9; color: #2E7D32; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 20px; border: 1px solid #C8E6C9;">
-                            {t['first_status']} ➔ NORMAL
-                        </span>
-                    </td>
-                    <td style="padding: 14px 16px; color: #64748B; font-size: 13px;">Init: <strong>{t['first_val']} {t['unit']}</strong></td>
-                    <td style="padding: 14px 16px; color: #2E7D32; font-size: 12px; font-weight: 600;">Résolu à {t['resolved_at_str']}</td>
+            html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rapport d'Incident AzurA IoT</title>
+</head>
+<body style="margin: 0; padding: 24px; background-color: #F9FAFB; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #111827;">
+    <div style="max-width: 620px; margin: 0 auto; background-color: #FFFFFF; border: 1px solid #000000; border-radius: 12px; padding: 32px 28px; box-shadow: 0 4px 16px rgba(0,0,0,0.06);">
+        
+        <!-- EN-TÊTE NOIR & BLANC AVEC LOGO -->
+        <table width="100%" border="0" cellspacing="0" cellpadding="0" style="border-bottom: 2px solid #000000; padding-bottom: 20px; margin-bottom: 24px;">
+            <tr>
+                <td align="left" style="vertical-align: middle;">
+                    <img src="cid:azura_logo" alt="Logo AzurA" style="height: 36px; width: auto; display: block;" />
+                </td>
+                <td align="right" style="vertical-align: middle;">
+                    <div style="font-size: 14px; font-weight: 900; letter-spacing: 0.5px; text-transform: uppercase; color: #000000;">
+                        RAPPORT D'INCIDENT IOT
+                    </div>
+                    <div style="font-size: 11px; color: #6B7280; margin-top: 4px;">
+                        {datetime.now(timezone.utc).strftime('%d/%m/%Y - %H:%M:%S UTC')}
+                    </div>
+                </td>
+            </tr>
+        </table>
+
+        <p style="font-size: 13.5px; line-height: 1.5; color: #111827; margin: 0 0 16px 0;">
+            Bonjour,
+        </p>
+        <p style="font-size: 13.5px; line-height: 1.5; color: #374151; margin: 0 0 20px 0;">
+            Le moteur de surveillance AzurA IoT a qualifié <strong>{total_incidents} anomalie(s) critique(s)</strong> confirmée(s) selon les règles d'exploitation industrielle :
+        </p>
+
+        <!-- TABLEAU DES INCIDENTS (NOIR & BLANC ÉPURÉ) -->
+        <table width="100%" border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse; width: 100%; border: 1px solid #E5E7EB; border-radius: 8px; overflow: hidden; margin-bottom: 24px;">
+            <thead>
+                <tr style="background-color: #000000; color: #FFFFFF;">
+                    <th align="left" style="padding: 10px 14px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px;">Equipement</th>
+                    <th align="left" style="padding: 10px 14px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px;">Type</th>
+                    <th align="left" style="padding: 10px 14px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px;">Constat & Duree</th>
+                    <th align="left" style="padding: 10px 14px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px;">Zone</th>
                 </tr>
-                """
+            </thead>
+            <tbody>
+                {table_rows_html}
+            </tbody>
+        </table>
 
-            html_content = f"""
-            <!DOCTYPE html>
-            <html lang="fr">
-            <head>
-                <meta charset="UTF-8">
-                <title>Rapport d'Incident AzurA IoT</title>
-            </head>
-            <body style="margin: 0; padding: 0; background-color: #F4F6F9; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased;">
-                
-                <!-- CONTAINER PRINCIPAL -->
-                <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #F4F6F9; padding: 40px 10px;">
-                    <tr>
-                        <td align="center">
-                            <table width="680" border="0" cellspacing="0" cellpadding="0" style="background-color: #FFFFFF; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 35px rgba(0,0,0,0.07); border: 1px solid #E2E8F0;">
-                                
-                                <!-- HEADER BANNER CHARTE AZURA -->
-                                <tr>
-                                    <td style="background: linear-gradient(135deg, #1B5E20 0%, #2E7D32 100%); padding: 30px 40px; border-bottom: 4px solid #FBC02D;">
-                                        <table width="100%" border="0" cellspacing="0" cellpadding="0">
-                                            <tr>
-                                                <td align="left">
-                                                    <img src="cid:azura_logo" alt="AzurA Group" style="max-height: 48px; width: auto; display: block;" />
-                                                </td>
-                                                <td align="right">
-                                                    <span style="background-color: rgba(251, 192, 45, 0.2); color: #FBC02D; font-size: 11px; font-weight: 800; letter-spacing: 1px; padding: 6px 14px; border-radius: 30px; border: 1px solid rgba(251, 192, 45, 0.4); text-transform: uppercase;">
-                                                        SUPERVISION TEMPS RÉEL
-                                                    </span>
-                                                </td>
-                                            </tr>
-                                        </table>
-                                    </td>
-                                </tr>
+        <!-- ACTIONS RECOMMANDÉES -->
+        <div style="background-color: #F9FAFB; border: 1px solid #000000; border-radius: 8px; padding: 16px 20px; margin-bottom: 24px;">
+            <div style="font-size: 11.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; color: #000000;">
+                Actions Recommandees :
+            </div>
+            <div style="font-size: 12.5px; color: #374151; line-height: 1.5;">
+                • Accéder à la plateforme de télémétrie : <a href="http://84.8.222.106/" style="color: #000000; font-weight: 700; text-decoration: underline;">Supervision Temps Réel</a><br/>
+                • Effectuer une vérification physique sur site pour les équipements signalés ci-dessus.
+            </div>
+        </div>
 
-                                <!-- TITRE & SYNTHÈSE -->
-                                <tr>
-                                    <td style="padding: 35px 40px 20px 40px;">
-                                        <h1 style="color: #0F172A; font-size: 22px; font-weight: 800; margin: 0 0 10px 0; letter-spacing: -0.5px;">
-                                            📋 Rapport Synthétique d'Incident IoT
-                                        </h1>
-                                        <p style="color: #64748B; font-size: 14px; line-height: 1.6; margin: 0;">
-                                            Bilan d'évaluation consolidé généré automatiquement après une fenêtre de surveillance de <strong>{elapsed_seconds} secondes</strong>.
-                                        </p>
-                                    </td>
-                                </tr>
+        <!-- PIED DE PAGE -->
+        <div style="border-top: 1px solid #E5E7EB; padding-top: 16px; font-size: 11px; color: #6B7280; text-align: center;">
+            © 2026 AzurA Group — Plateforme Industrielle de Supervision IoT Temps Réel
+        </div>
 
-                                <!-- CARTES KPIS DE SYNTHÈSE -->
-                                <tr>
-                                    <td style="padding: 0 40px 30px 40px;">
-                                        <table width="100%" border="0" cellspacing="0" cellpadding="0">
-                                            <tr>
-                                                <td width="48%" style="background-color: #FEF2F2; border: 1px solid #FECACA; border-radius: 12px; padding: 18px; text-align: center;">
-                                                    <div style="font-size: 12px; font-weight: 700; color: #991B1B; text-transform: uppercase; letter-spacing: 0.5px;">Pannes Permanentes</div>
-                                                    <div style="font-size: 28px; font-weight: 900; color: #D32F2F; margin-top: 4px;">{len(permanent_faults)}</div>
-                                                    <div style="font-size: 11px; color: #B91C1C; margin-top: 2px;">En alerte continue &gt; 2 min</div>
-                                                </td>
-                                                <td width="4%"></td>
-                                                <td width="48%" style="background-color: #F0FDF4; border: 1px solid #BBF7D0; border-radius: 12px; padding: 18px; text-align: center;">
-                                                    <div style="font-size: 12px; font-weight: 700; color: #166534; text-transform: uppercase; letter-spacing: 0.5px;">Pannes Temporaires</div>
-                                                    <div style="font-size: 28px; font-weight: 900; color: #2E7D32; margin-top: 4px;">{len(temporary_faults)}</div>
-                                                    <div style="font-size: 11px; color: #15803D; margin-top: 2px;">Régulées automatiquement</div>
-                                                </td>
-                                            </tr>
-                                        </table>
-                                    </td>
-                                </tr>
+    </div>
+</body>
+</html>
+"""
 
-                                <!-- TABLEAU 1 : PANNES PERMANENTES -->
-                                <tr>
-                                    <td style="padding: 0 40px 30px 40px;">
-                                        <div style="margin-bottom: 12px; display: flex; align-items: center;">
-                                            <span style="font-size: 16px; font-weight: 800; color: #991B1B;">🔴 1. Pannes Permanentes (Action Requise Urgent)</span>
-                                        </div>
-                                        <table width="100%" border="0" cellspacing="0" cellpadding="0" style="border-radius: 10px; overflow: hidden; border: 1px solid #E2E8F0;">
-                                            <thead>
-                                                <tr style="background-color: #991B1B; color: #FFFFFF; font-size: 12px; font-weight: 700; text-transform: uppercase;">
-                                                    <th style="padding: 12px 16px; text-align: left;">Capteur</th>
-                                                    <th style="padding: 12px 16px; text-align: left;">Localisation</th>
-                                                    <th style="padding: 12px 16px; text-align: left;">Statut Actuel</th>
-                                                    <th style="padding: 12px 16px; text-align: left;">Valeur</th>
-                                                    <th style="padding: 12px 16px; text-align: left;">Recommandation</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody style="background-color: #FFFFFF;">
-                                                {perm_rows if perm_rows else '<tr><td colspan="5" style="padding: 20px; text-align: center; color: #166534; font-weight: 600; font-size: 13px;">✅ Aucune panne permanente détectée. Les systèmes sont stables.</td></tr>'}
-                                            </tbody>
-                                        </table>
-                                    </td>
-                                </tr>
-
-                                <!-- TABLEAU 2 : PANNES TEMPORAIRES -->
-                                <tr>
-                                    <td style="padding: 0 40px 40px 40px;">
-                                        <div style="margin-bottom: 12px;">
-                                            <span style="font-size: 16px; font-weight: 800; color: #166534;">🟢 2. Pannes Temporaires (Régulées Automatiquement)</span>
-                                        </div>
-                                        <table width="100%" border="0" cellspacing="0" cellpadding="0" style="border-radius: 10px; overflow: hidden; border: 1px solid #E2E8F0;">
-                                            <thead>
-                                                <tr style="background-color: #166534; color: #FFFFFF; font-size: 12px; font-weight: 700; text-transform: uppercase;">
-                                                    <th style="padding: 12px 16px; text-align: left;">Capteur</th>
-                                                    <th style="padding: 12px 16px; text-align: left;">Localisation</th>
-                                                    <th style="padding: 12px 16px; text-align: left;">Évolution Statut</th>
-                                                    <th style="padding: 12px 16px; text-align: left;">Valeur Init.</th>
-                                                    <th style="padding: 12px 16px; text-align: left;">Heure Résolution</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody style="background-color: #FFFFFF;">
-                                                {temp_rows if temp_rows else '<tr><td colspan="5" style="padding: 20px; text-align: center; color: #64748B; font-size: 13px;">Aucune panne temporaire enregistrée pendant cette fenêtre.</td></tr>'}
-                                            </tbody>
-                                        </table>
-                                    </td>
-                                </tr>
-
-                                <!-- FOOTER CHARTE AZURA -->
-                                <tr>
-                                    <td style="background-color: #0F172A; padding: 25px 40px; text-align: center; border-top: 3px solid #1B5E20;">
-                                        <p style="color: #94A3B8; font-size: 12px; margin: 0 0 6px 0; font-weight: 600;">
-                                            AzurA Group — Plateforme de Supervision IoT Big Data
-                                        </p>
-                                        <p style="color: #64748B; font-size: 11px; margin: 0;">
-                                            Agadir • Dakhla • Casablanca • Tanger • Kénitra | Notification automatique de sécurité
-                                        </p>
-                                    </td>
-                                </tr>
-
-                            </table>
-                        </td>
-                    </tr>
-                </table>
-
-            </body>
-            </html>
-            """
-
-            # Construction du message MIME avec logo inline (Content-ID)
+            # 3. Construction des en-têtes RFC standards
             msg = MIMEMultipart("related")
             msg["Subject"] = subject
             msg["From"] = settings.SMTP_USER
-            msg["To"] = settings.ALERT_EMAIL_RECIPIENT
+            msg["Reply-To"] = settings.SMTP_USER
+            msg["To"] = recipient
+            msg["Date"] = email.utils.formatdate(localtime=True)
+            msg["Message-ID"] = email.utils.make_msgid(domain="gmail.com")
 
-            msg_alternative = MIMEMultipart("alternative")
-            msg.attach(msg_alternative)
-            msg_alternative.attach(MIMEText(html_content, "html"))
+            alt_part = MIMEMultipart("alternative")
+            alt_part.attach(MIMEText(plain_text, "plain", "utf-8"))
+            alt_part.attach(MIMEText(html_content, "html", "utf-8"))
+            msg.attach(alt_part)
 
-            # Attachement du logo officiel AzurA inline
-            logo_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "assets", "azura_logo.png")
-            if os.path.exists(logo_path):
-                with open(logo_path, "rb") as f:
-                    logo_img = MIMEImage(f.read())
-                    logo_img.add_header("Content-ID", "<azura_logo>")
-                    logo_img.add_header("Content-Disposition", "inline", filename="azura_logo.png")
-                    msg.attach(logo_img)
-            else:
-                print(f"[EmailService] ⚠️ Fichier logo introuvable sur {logo_path}, l'email sera envoyé sans image inline.")
+            # Intégration du logo en pièce jointe inline CID
+            logo_paths = [
+                "/app/assets/azura_logo.png",
+                "assets/azura_logo.png",
+                "webapp/backend/assets/azura_logo.png",
+                "webapp/frontend/public/azura_logo.png"
+            ]
+            for lp in logo_paths:
+                if os.path.exists(lp):
+                    try:
+                        with open(lp, "rb") as img_f:
+                            img = MIMEImage(img_f.read(), name="azura_logo.png")
+                            img.add_header("Content-ID", "<azura_logo>")
+                            img.add_header("Content-Disposition", "inline", filename="azura_logo.png")
+                            msg.attach(img)
+                        break
+                    except Exception as ex:
+                        print(f"[EmailEngine] Erreur attachement logo CID: {ex}")
 
             server = smtplib.SMTP(settings.SMTP_SERVER, settings.SMTP_PORT)
             server.starttls()
             server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-            server.sendmail(settings.SMTP_USER, settings.ALERT_EMAIL_RECIPIENT, msg.as_string())
+            server.sendmail(settings.SMTP_USER, recipient, msg.as_string())
             server.quit()
 
-            print(f"[EmailService] ✅ Email récapitulatif consolidé avec charte AzurA envoyé avec succès à {settings.ALERT_EMAIL_RECIPIENT} !")
+            # Enregistrement dans l'historique MongoDB
+            mongo_service.log_email_notification({
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "recipient": recipient,
+                "subject": subject,
+                "total_alerts": total_incidents,
+                "alerts": alerts
+            })
+
+            print(f"[EmailEngine] ✉️ Rapport d'incident Noir & Blanc envoyé avec succès ({total_incidents} alertes) à {recipient} !")
             return True
 
         except Exception as e:
-            print(f"[EmailService] ❌ Échec de l'envoi de l'email récapitulatif: {e}")
+            print(f"[EmailEngine] ❌ Échec transmission rapport d'incident : {e}")
             return False
 
     def send_otp_verification_email(self, recipient_email: str, otp_code: str) -> bool:
-        """Envoie un email de vérification OTP optimisé pour la délivrabilité Gmail."""
+        """Envoie un email de vérification OTP en TEXTE BRUT pur pour une délivrabilité maximale."""
         if not settings.SMTP_USER or not settings.SMTP_PASSWORD:
             print(f"[EmailService] ⚠️ SMTP non configuré. Simulation Code OTP pour {recipient_email} : {otp_code}")
             return True
 
         try:
-            import email.utils
-
             subject = f"Code de verification AzurA : {otp_code}"
             
             body = f"""Bonjour,
@@ -367,8 +448,6 @@ Plateforme Industrielle de Supervision IoT
             return True
 
         try:
-            import email.utils
-
             subject = f"Confirmation de changement d'email AzurA : {otp_code}"
             
             body = f"""Bonjour,
@@ -410,4 +489,3 @@ Plateforme Industrielle de Supervision IoT
 
 # Singleton global pour le service email
 email_service = EmailNotificationService()
-

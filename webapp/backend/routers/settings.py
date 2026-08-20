@@ -171,16 +171,52 @@ def test_email_notification(recipient: str = Body(default=None, embed=True)):
     """
     Déclenche un test d'envoi d'email SMTP en direct avec la charte AzurA.
     """
-    target_email = recipient or settings.ALERT_EMAIL_RECIPIENT or settings.SMTP_USER
-    if not target_email:
-        raise HTTPException(status_code=400, detail="Aucune adresse email destinataire configuree.")
+    cfg = mongo_service.get_alert_recipient_config()
+    target_email = recipient or (cfg.get("email") if cfg.get("is_verified") else None)
+    if not target_email or target_email.strip().lower() == (settings.SMTP_USER or "").strip().lower():
+        raise HTTPException(status_code=400, detail="Aucune adresse email destinataire verifiee dans MongoDB. Veuillez d abord valider un email dans les parametres.")
     
     try:
         # Envoi d'un rapport de test
-        success = email_service.send_consolidated_digest_email(elapsed_seconds=120)
+        success = email_service._send_monochrome_incident_report([{
+            "device_id": "sensor_pres_001",
+            "type": "pression",
+            "location": "Agadir Serre 1",
+            "category": "TEST TRANSMISSION",
+            "description": "Validation du flux de communication SMTP",
+            "duration_str": "Test Instantane",
+            "severity": "INFO"
+        }])
         if success:
             return {"status": "success", "message": f"Email de test envoye avec succes a {target_email}"}
         else:
             return {"status": "warning", "message": "Le service email a termine mais le serveur SMTP n a pas confirme la reception."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Echec envoi email SMTP: {str(e)}")
+
+@router.get("/notifications-log")
+def get_notifications_log():
+    """
+    Retourne l'historique des emails d'alerte envoyés et le nombre de notifications non lues.
+    """
+    try:
+        logs = mongo_service.get_email_notifications_log(limit=20)
+        unread_count = sum(1 for item in logs if not item.get("read", False))
+        return {
+            "status": "success",
+            "notifications": logs,
+            "unread_count": unread_count
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur lecture notifications: {str(e)}")
+
+@router.post("/notifications-log/mark-read")
+def mark_notifications_read():
+    """
+    Marque toutes les notifications email d'alerte comme lues.
+    """
+    try:
+        mongo_service.mark_email_notifications_read()
+        return {"status": "success", "message": "Toutes les notifications ont ete marquees comme lues."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur marquage lu: {str(e)}")

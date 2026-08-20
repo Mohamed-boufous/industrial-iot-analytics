@@ -47,8 +47,19 @@ class KafkaConsumerService:
     def _consume_loop(self):
         """Boucle principale de lecture des messages Kafka."""
         consumer = None
+        last_offline_check = time.time()
         while self.running:
             try:
+                # Cycle de vérification périodique des capteurs muets (> 10 min)
+                now_check = time.time()
+                if now_check - last_offline_check >= 10.0:
+                    last_offline_check = now_check
+                    try:
+                        from services.email_service import email_service
+                        email_service.check_offline_sensors_cycle()
+                    except Exception:
+                        pass
+
                 if consumer is None:
                     consumer = self._create_consumer()
                     consumer.subscribe([settings.KAFKA_TOPIC_PROCESSED, settings.KAFKA_TOPIC_ALERTS])
@@ -73,6 +84,12 @@ class KafkaConsumerService:
                     if device_id:
                         self.latest_sensors[device_id] = payload
                         self.sensors_history[device_id].append(payload)
+                        # Mise à jour du battement de cœur pour la détection des pannes hors ligne
+                        try:
+                            from services.email_service import email_service
+                            email_service.process_alert_event(payload)
+                        except Exception:
+                            pass
 
                 elif topic == settings.KAFKA_TOPIC_ALERTS:
                     self.recent_alerts.insert(0, payload)
@@ -88,7 +105,7 @@ class KafkaConsumerService:
                     except Exception as err:
                         print(f"[-] Erreur persistance alerte MongoDB: {err}")
 
-                    # Transmission de l'alerte au service de notification par email (vérification des 60s)
+                    # Transmission de l'alerte au service de notification par email
                     try:
                         from services.email_service import email_service
                         email_service.process_alert_event(payload)

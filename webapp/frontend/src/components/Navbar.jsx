@@ -7,9 +7,11 @@ import {
   ChartLineUp, 
   GearSix, 
   WifiHigh,
-  WifiSlash
+  WifiSlash,
+  Bell
 } from '@phosphor-icons/react';
 import { AnimatedThemeToggler } from './ui/AnimatedThemeToggler';
+import AlertNotificationsModal from './ui/AlertNotificationsModal';
 import { useWebSocket } from '../hooks/useWebSocket';
 
 const navItems = [
@@ -23,17 +25,17 @@ export default function Navbar() {
   const location = useLocation();
   const navigate = useNavigate();
   const [isScrolled, setIsScrolled] = useState(false);
+  const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const [unreadAlertsCount, setUnreadAlertsCount] = useState(0);
   const { isConnected } = useWebSocket('/ws/alerts');
 
   useEffect(() => {
     const handleScroll = () => {
-      // Si scroll > 35px, la navbar descend en bas et le titre réapparaît dans le header
       const scrolled = window.scrollY > 35;
       setIsScrolled(scrolled);
     };
 
     window.addEventListener('scroll', handleScroll, { passive: true });
-    // Vérification initiale
     handleScroll();
 
     return () => window.removeEventListener('scroll', handleScroll);
@@ -41,10 +43,10 @@ export default function Navbar() {
 
   return (
     <>
-      {/* 1. TOP HEADER : GAUCHE (LOGO AZURA) — CENTRE (DYNAMIC SLOT: NAVBAR À SCROLL 0 / TITRE AU SCROLL) — DROITE (CONTRÔLES) */}
+      {/* 1. TOP HEADER : GAUCHE (LOGO AZURA) — CENTRE (DYNAMIC SLOT) — DROITE (CONTRÔLES & ALERTES) */}
       <header className="top-header">
         <div className="top-header-container">
-          {/* Logo à l'extrême Gauche (transparent) */}
+          {/* Logo à l'extrême Gauche */}
           <div className="top-brand-left">
             <img 
               src="/azura_logo.png" 
@@ -53,7 +55,7 @@ export default function Navbar() {
             />
           </div>
 
-          {/* Slot Central : Transition Fluide & Animée entre le Titre Header et la Barre de Navigation */}
+          {/* Slot Central : Transition Fluide entre Titre Header et Barre de Navigation */}
           <div className="top-title-center" style={{ minHeight: '46px', position: 'relative', width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
             <AnimatePresence mode="wait">
               {isScrolled ? (
@@ -121,9 +123,64 @@ export default function Navbar() {
           </div>
 
           {/* Contrôles à l'extrême Droite */}
-          <div className="top-controls-right">
+          <div className="top-controls-right" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <AnimatedThemeToggler variant="circle" duration={400} />
             
+            {/* BOUTON CLOCHE D'ALERTES & NOTIFICATIONS (NOIR & BLANC ADAPTATIF) */}
+            <motion.button
+              whileTap={{ scale: 0.92 }}
+              whileHover={{ scale: 1.05 }}
+              type="button"
+              onClick={() => setIsNotifOpen(true)}
+              style={{
+                position: 'relative',
+                width: '36px',
+                height: '36px',
+                borderRadius: '50%',
+                border: '1px solid var(--azura-border)',
+                backgroundColor: 'var(--azura-card-bg)',
+                color: 'var(--azura-text)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.05)',
+                transition: 'all 0.2s ease'
+              }}
+              title="Centre de notifications et rapports d'alertes"
+              aria-label="Centre de notifications"
+            >
+              <Bell size={18} weight={unreadAlertsCount > 0 ? "fill" : "regular"} />
+
+              {/* Badge Compteur d'Alertes Non Vues */}
+              {unreadAlertsCount > 0 && (
+                <motion.span
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  style={{
+                    position: 'absolute',
+                    top: '-3px',
+                    right: '-3px',
+                    minWidth: '17px',
+                    height: '17px',
+                    padding: '0 4px',
+                    borderRadius: '9999px',
+                    backgroundColor: 'var(--azura-text)',
+                    color: 'var(--azura-bg)',
+                    border: '1.5px solid var(--azura-card-bg)',
+                    fontSize: '0.65rem',
+                    fontWeight: 900,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    lineHeight: 1
+                  }}
+                >
+                  {unreadAlertsCount > 9 ? '9+' : unreadAlertsCount}
+                </motion.span>
+              )}
+            </motion.button>
+
             {/* Macaron Statut Dynamique Réel */}
             <div
               className="system-status-badge"
@@ -133,7 +190,6 @@ export default function Navbar() {
                 transition: "all 0.3s ease"
               }}
             >
-              {/* Point Indicateur Pulse */}
               <span style={{
                 position: "relative",
                 display: "flex",
@@ -175,6 +231,13 @@ export default function Navbar() {
           </div>
         </div>
       </header>
+
+      {/* POP-UP / DRAWER DE NOTIFICATIONS D'ALERTES */}
+      <AlertNotificationsModal
+        isOpen={isNotifOpen}
+        onClose={() => setIsNotifOpen(false)}
+        onUnreadChange={setUnreadAlertsCount}
+      />
 
       {/* 2. BOTTOM FLOATING NAVIGATION MENU (APPARAÎT EN BAS UNIQUEMENT LORS DU SCROLL > 0) */}
       <AnimatePresence>

@@ -583,6 +583,44 @@ class MongoService:
         db[settings.COLLECTION_CONFIG].delete_one({"_id": "email_otp_verification"})
         return {"success": True, "message": "Email supprime avec succes de la configuration"}
 
+    def log_email_notification(self, notification_data: dict) -> bool:
+        """Enregistre un rapport d'alerte email envoyé dans l'historique MongoDB."""
+        try:
+            db = self._get_db()
+            doc = {
+                "timestamp": notification_data.get("timestamp", datetime.now(timezone.utc).isoformat()),
+                "recipient": notification_data.get("recipient", ""),
+                "subject": notification_data.get("subject", ""),
+                "total_alerts": notification_data.get("total_alerts", 0),
+                "alerts": notification_data.get("alerts", []),
+                "read": False
+            }
+            db["email_notifications_log"].insert_one(doc)
+            return True
+        except Exception as e:
+            print(f"[MongoService] Erreur log notification email: {e}")
+            return False
+
+    def get_email_notifications_log(self, limit: int = 20) -> list[dict]:
+        """Retourne la liste des derniers rapports d'alerte email envoyés."""
+        try:
+            db = self._get_db()
+            cursor = db["email_notifications_log"].find({}, {"_id": 0}).sort("timestamp", DESCENDING).limit(limit)
+            return list(cursor)
+        except Exception as e:
+            print(f"[MongoService] Erreur lecture notifications log: {e}")
+            return []
+
+    def mark_email_notifications_read(self) -> bool:
+        """Marque toutes les notifications email comme lues."""
+        try:
+            db = self._get_db()
+            db["email_notifications_log"].update_many({"read": False}, {"$set": {"read": True}})
+            return True
+        except Exception as e:
+            print(f"[MongoService] Erreur mark read: {e}")
+            return False
+
 
 DEFAULT_THRESHOLDS = {
     "temperature": {
