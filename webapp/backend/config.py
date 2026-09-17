@@ -5,14 +5,16 @@ class Settings(BaseSettings):
     # --- PROJET & SÉCURITÉ ---
     PROJECT_NAME: str = "AzurA IoT Platform API"
     VERSION: str = "1.0.0"
+    VM_PUBLIC_IP: str = os.getenv("VM_PUBLIC_IP", "")
     CORS_ORIGINS: list[str] = [
         "http://localhost:5173",
         "http://localhost:80",
         "http://localhost",
-        "http://84.8.222.106:5173",
-        "http://84.8.222.106:80",
-        "http://84.8.222.106",
-    ]
+    ] + ([
+        f"http://{os.getenv('VM_PUBLIC_IP')}:5173",
+        f"http://{os.getenv('VM_PUBLIC_IP')}:80",
+        f"http://{os.getenv('VM_PUBLIC_IP')}",
+    ] if os.getenv("VM_PUBLIC_IP") else [])
     
     # --- KAFKA CONFIGURATION ---
     KAFKA_BROKERS: str = os.getenv("KAFKA_BROKERS", "kafka1:19092,kafka2:19092,kafka3:19092")

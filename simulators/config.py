@@ -2,7 +2,7 @@ import os
 
 # Configuration du simulateur IoT
 
-KAFKA_BROKERS_ENV = os.environ.get("KAFKA_BROKERS", "84.8.222.106:9092")
+KAFKA_BROKERS_ENV = os.environ.get("KAFKA_BROKERS", "localhost:9092")
 KAFKA_BOOTSTRAP_SERVERS = [b.strip() for b in KAFKA_BROKERS_ENV.split(",")]  # Modifiable selon l'environnement de la VM ou Docker
 KAFKA_TOPIC = "iot-raw-data"
 ANOMALY_RATE = 0.10  # 10% d'anomalies contrôlées

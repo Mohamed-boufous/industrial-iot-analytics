@@ -9,28 +9,33 @@ from email.mime.image import MIMEImage
 from config import settings
 from services.mongo_service import mongo_service
 
-# Référentiel des 20 capteurs industriels d'exploitation AzurA
+# Referentiel des 20 capteurs industriels d'exploitation AzurA
+# IMPORTANT : Les IDs doivent correspondre EXACTEMENT a ceux du simulateur (simulators/config.py)
 ALL_KNOWN_SENSORS = [
+    # ── Zone 1 : Agadir ──
     {"id": "sensor_temp_001", "type": "temperature", "location": "agadir_serre_1"},
     {"id": "sensor_vib_001", "type": "vibration", "location": "agadir_serre_1"},
     {"id": "sensor_pres_001", "type": "pression", "location": "agadir_serre_1"},
     {"id": "sensor_hum_001", "type": "humidite", "location": "agadir_serre_1"},
-    {"id": "sensor_pwr_001", "type": "consommation", "location": "agadir_serre_1"},
+    {"id": "sensor_pow_001", "type": "consommation", "location": "agadir_serre_1"},
+    # ── Zone 2 : Dakhla ──
     {"id": "sensor_temp_002", "type": "temperature", "location": "dakhla_station_emballage"},
     {"id": "sensor_vib_002", "type": "vibration", "location": "dakhla_station_emballage"},
     {"id": "sensor_pres_002", "type": "pression", "location": "dakhla_station_emballage"},
     {"id": "sensor_hum_002", "type": "humidite", "location": "dakhla_station_emballage"},
-    {"id": "sensor_pwr_002", "type": "consommation", "location": "dakhla_station_emballage"},
+    {"id": "sensor_pow_002", "type": "consommation", "location": "dakhla_station_emballage"},
+    # ── Zone 3 : Kenitra ──
     {"id": "sensor_temp_003", "type": "temperature", "location": "kenitra_station_filtrage"},
     {"id": "sensor_vib_003", "type": "vibration", "location": "kenitra_station_filtrage"},
     {"id": "sensor_pres_003", "type": "pression", "location": "kenitra_station_filtrage"},
     {"id": "sensor_hum_003", "type": "humidite", "location": "kenitra_station_filtrage"},
-    {"id": "sensor_pwr_003", "type": "consommation", "location": "kenitra_station_filtrage"},
-    {"id": "sensor_temp_004", "type": "temperature", "location": "marrakech_zone_logistique"},
-    {"id": "sensor_vib_004", "type": "vibration", "location": "marrakech_zone_logistique"},
-    {"id": "sensor_pres_004", "type": "pression", "location": "marrakech_zone_logistique"},
-    {"id": "sensor_hum_004", "type": "humidite", "location": "marrakech_zone_logistique"},
-    {"id": "sensor_pwr_004", "type": "consommation", "location": "marrakech_zone_logistique"},
+    {"id": "sensor_pow_003", "type": "consommation", "location": "kenitra_station_filtrage"},
+    # ── Zone 4 : Tanger Med ──
+    {"id": "sensor_temp_004", "type": "temperature", "location": "tangier_med_hub"},
+    {"id": "sensor_vib_004", "type": "vibration", "location": "tangier_med_hub"},
+    {"id": "sensor_pres_004", "type": "pression", "location": "tangier_med_hub"},
+    {"id": "sensor_hum_004", "type": "humidite", "location": "tangier_med_hub"},
+    {"id": "sensor_pow_004", "type": "consommation", "location": "tangier_med_hub"},
 ]
 
 class EmailNotificationService:
@@ -70,22 +75,25 @@ class EmailNotificationService:
 
     def _get_active_recipient(self) -> str | None:
         """
-        Récupère EXCLUSIVEMENT l'email destinataire vérifié et enregistré dans MongoDB.
-        INTERDICTION STRICTE d'envoyer vers l'expéditeur technique azuragroupeiot@gmail.com.
+        Recupere l'email destinataire des alertes :
+        1. Priorite : Email personnalise verifie dans MongoDB (ex: responsable sur site).
+        2. Repli par defaut : Si aucun email verifie n'est configure, utilise ALERT_EMAIL_RECIPIENT ou SMTP_USER depuis .env.
         """
         try:
             cfg = mongo_service.get_alert_recipient_config()
             if cfg.get("is_verified") and cfg.get("email"):
                 verified_email = cfg.get("email").strip()
-                # On bloque tout envoi vers l'adresse d'expédition technique
-                if verified_email and verified_email.lower() != (settings.SMTP_USER or "").strip().lower():
+                if verified_email:
                     return verified_email
         except Exception as e:
             print(f"[EmailEngine] Erreur lecture destinataire MongoDB: {e}")
-        return None
+
+        # Repli par defaut si aucun email personnalise n'est configure
+        fallback_email = (settings.ALERT_EMAIL_RECIPIENT or settings.SMTP_USER or "").strip()
+        return fallback_email if fallback_email else None
 
     def process_alert_event(self, alert_data: dict):
-        """Traite chaque événement reçu de Kafka et applique les 3 règles de déclenchement."""
+        """Traite chaque evenement recu de Kafka et applique les 3 regles de declenchement."""
         device_id = alert_data.get("device_id")
         if not device_id:
             return
@@ -98,7 +106,7 @@ class EmailNotificationService:
         battery = alert_data.get("battery") if alert_data.get("battery") is not None else alert_data.get("battery_level", 100.0)
         now = time.time()
 
-        # 1. Mise à jour du battement de cœur (Heartbeat)
+        # 1. Mise a jour du battement de coeur (Heartbeat)
         self.heartbeat_trackers[device_id] = {
             "last_seen": now,
             "location": location,
@@ -106,22 +114,46 @@ class EmailNotificationService:
         }
 
         # ═════════════════════════════════════════════════════════════════════
-        # RÈGLE 1 : DÉRIVE PHYSIQUE CONTINUE > 5 MINUTES (300 SECONDES)
+        # REGLE 1 : DERIVE PHYSIQUE CONTINUE > 5 MINUTES (300 SECONDES)
+        # Statuts Spark reconnus : CRITICAL_TEMP_LOW, CRITICAL_TEMP_HIGH,
+        # CRITICAL_VIB_LOW, CRITICAL_VIB_HIGH, CRITICAL_PRES_LOW, CRITICAL_PRES_HIGH,
+        # CRITICAL_HUM_LOW, CRITICAL_HUM_HIGH, CRITICAL_POW_LOW, CRITICAL_POW_HIGH
         # ═════════════════════════════════════════════════════════════════════
-        if status in ["HAUT", "BAS"]:
+
+        # Mapping des statuts Spark vers des descriptions humaines lisibles
+        DRIFT_STATUS_MAP = {
+            "CRITICAL_TEMP_LOW":  "Sous-Temperature / Risque Gel",
+            "CRITICAL_TEMP_HIGH": "Sur-Temperature / Surchauffe",
+            "CRITICAL_VIB_LOW":   "Vibration Anormalement Basse",
+            "CRITICAL_VIB_HIGH":  "Desequilibre Mecanique / Vibrations Excessives",
+            "CRITICAL_PRES_LOW":  "Pression Insuffisante",
+            "CRITICAL_PRES_HIGH": "Surpression Critique",
+            "CRITICAL_HUM_LOW":   "Humidite Anormalement Basse",
+            "CRITICAL_HUM_HIGH":  "Humidite Excessive",
+            "CRITICAL_POW_LOW":   "Sous-Consommation Electrique",
+            "CRITICAL_POW_HIGH":  "Surconsommation Electrique",
+        }
+
+        is_drift_status = status in DRIFT_STATUS_MAP
+
+        if is_drift_status:
+            drift_label = DRIFT_STATUS_MAP[status]
             if device_id not in self.drift_trackers:
+                # Premier evenement en anomalie : on demarre le chronometre
                 self.drift_trackers[device_id] = {
                     "first_seen": now,
                     "status": status,
                     "val": val,
                     "unit": unit,
                     "location": location,
-                    "type": sensor_type
+                    "type": sensor_type,
+                    "drift_label": drift_label
                 }
             else:
                 track = self.drift_trackers[device_id]
                 track["val"] = val
                 track["status"] = status
+                track["drift_label"] = drift_label
                 duration = now - track["first_seen"]
 
                 if duration >= self.DRIFT_THRESHOLD_SEC:
@@ -133,20 +165,25 @@ class EmailNotificationService:
                             "type": sensor_type,
                             "location": location,
                             "category": "DERIVE PHYSIQUE",
-                            "description": f"Seuil {status} confirme ({val} {unit})",
+                            "description": f"{drift_label} ({val} {unit})",
                             "duration_str": f"{int(duration // 60)} min {int(duration % 60)} s",
                             "severity": "CRITIQUE"
                         }, cooldown_key)
 
         elif status == "NORMAL":
-            # Si le capteur redevient normal, on réinitialise son suivi de dérive
+            # Si le capteur redevient normal, on reinitialise son suivi de derive
             if device_id in self.drift_trackers:
                 del self.drift_trackers[device_id]
 
         # ═════════════════════════════════════════════════════════════════════
-        # RÈGLE 3 : BATTERIE CRITIQUE (< 20%)
+        # REGLE 3 : BATTERIE CRITIQUE (< 20%)
+        # Statut Spark reconnu : LOW_BATTERY, ou battery_level < seuil
         # ═════════════════════════════════════════════════════════════════════
-        if battery is not None and (battery < self.BATTERY_CRITICAL_LIMIT or status == "CRITICAL_BATTERY"):
+        is_battery_critical = (
+            (battery is not None and battery < self.BATTERY_CRITICAL_LIMIT)
+            or status == "LOW_BATTERY"
+        )
+        if is_battery_critical:
             cooldown_key = (device_id, "BATTERY")
             last_sent = self.cooldown_trackers.get(cooldown_key, 0)
             if (now - last_sent) >= self.COOLDOWN_SEC:
@@ -241,7 +278,7 @@ Synthèse des alertes qualifiées nécessitant une prise de décision :
 {plain_rows}
 
 Mesures recommandées :
-1. Consulter le tableau de bord temps réel : http://84.8.222.106/
+1. Consulter le tableau de bord temps réel : http://{settings.VM_PUBLIC_IP or 'localhost'}/
 2. Vérifier l'état physique des équipements mentionnés sur site.
 
 --
@@ -327,7 +364,7 @@ Plateforme Industrielle de Supervision IoT
                 Actions Recommandees :
             </div>
             <div style="font-size: 12.5px; color: #374151; line-height: 1.5;">
-                • Accéder à la plateforme de télémétrie : <a href="http://84.8.222.106/" style="color: #000000; font-weight: 700; text-decoration: underline;">Supervision Temps Réel</a><br/>
+                • Accéder à la plateforme de télémétrie : <a href="http://{settings.VM_PUBLIC_IP or 'localhost'}/" style="color: #000000; font-weight: 700; text-decoration: underline;">Supervision Temps Réel</a><br/>
                 • Effectuer une vérification physique sur site pour les équipements signalés ci-dessus.
             </div>
         </div>
